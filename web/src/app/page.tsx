@@ -13,6 +13,7 @@ export default function Home() {
 
   return (
     <div style={{ padding: 40 }}>
+      <h1>Photo Forensic Detector</h1>
       <button onClick={callApi}>Call API</button>
 
       {data && (
