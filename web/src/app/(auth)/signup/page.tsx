@@ -14,7 +14,7 @@ export default function Signup() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
 
-  async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSignup(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault();
     if (loading) return;
 
