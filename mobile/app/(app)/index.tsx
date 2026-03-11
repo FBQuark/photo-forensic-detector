@@ -6,7 +6,7 @@ export default function Index() {
   const {user, session, signout} = useAuth()
 
   return (
-    <SafeAreaView>
+    <SafeAreaView style={styles.container}>
           <TouchableOpacity 
             style={styles.button} 
             onPress={signout}
@@ -23,8 +23,9 @@ export default function Index() {
 
 const styles = StyleSheet.create({
   container:{
+    flex: 1,
     paddingHorizontal:20,
-
+    backgroundColor:'white'
   },
   headline:{
     paddingVertical:20
