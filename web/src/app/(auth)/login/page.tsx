@@ -14,32 +14,8 @@ export default function Login() {
   const [message, setMessage] = useState("");
   const { signin, signout, session } = useAuth();
 
-/*  async function handleLogin(e: React.SubmitEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (loading) return;
-
-    setLoading(true);
-    setMessage("");
-
-    try {
-      const result = await account.createEmailPasswordSession({
-        email,
-        password
-      });
-
-      console.log(result);
-
-      setMessage("Login successful.");
-
-    } catch (error: any) {
-      setMessage(error?.message || "Login failed.");
-    } finally {
-      setLoading(false);
-    }
-  }*/
-
 //method to handle the user submitting login form/information
- const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+ const handleSubmit = async (e: React.SubmitEvent<HTMLFormElement>) => {
     e.preventDefault(); //prevents the browser from refreshing on submission
     try{
         await signin({email, password}); //send the signin info to auth to handle it
@@ -50,15 +26,6 @@ export default function Login() {
   };
 
 //method to handle the user signing out of their account
-const handleSignout = async () => {
-    try {
-        await signout(); //send the signout command to auth to handle it
-        setMessage("Logged Out");
-        } catch(error : any){
-            setMessage(error?.message || "Logout Failed"); //communicate with the user any errors that happen
-            }
-    }
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-300"> {/*centers the card and changes the background color*/}
         <div className="bg-white p-8 rounded-lg shadow-md w-full max-w-md"> {/*what gives the card effect*/}
@@ -91,12 +58,6 @@ const handleSignout = async () => {
 
         {/*moved sign out button out of the form so clicking it won't trigger form submission
             and only shows logout button if a session exists*/}
-        {session && (
-            <button onClick={handleSignout} className="w-full bg-gray-700 text-white py-2 rounded-md hover:bg-gray-400 transition-colors mt-1">
-                Logout
-            </button>
-            )}
-
           {message && <p>{message}</p>}
 
           <p className="text-black text-center">

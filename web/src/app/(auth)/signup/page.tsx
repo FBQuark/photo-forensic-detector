@@ -7,7 +7,6 @@ and spiffed up the UI a little bit - Joe
 
 import { useState } from "react";
 import Link from "next/link";
-import { account } from "@/lib/appwrite";
 import {useAuth} from "@/context/AuthContext"
 
 export default function Signup() {
@@ -19,7 +18,7 @@ export default function Signup() {
   const {signup} = useAuth();
 
 //method to handle sign up
-  async function handleSignup(e: React.FormEvent<HTMLFormElement>) {
+  async function handleSignup(e: React.SubmitEvent<HTMLFormElement>) {
     e.preventDefault(); //prevents browser from refreshing on submission
     try{
         const fullName = `${firstName} ${lastName}`; //combines the first and last name into one text field
@@ -28,31 +27,6 @@ export default function Signup() {
         }catch (error:any){
             setMessage(error?.message || "Sign Up Failed") //communicate to the user any errors
             }
-
-    /*if (loading) return;
-
-    setLoading(true);
-    setMessage("");
-
-    try {
-      const fullName = `${firstName} ${lastName}`;
-
-      const user = await account.create({
-        userId: ID.unique(),
-        email: email,
-        password: password,
-        name: fullName
-      });
-
-      setMessage("Account created successfully.");
-
-      console.log(user);
-
-    } catch (error: any) {
-      setMessage(error?.message || "Signup failed.");
-    } finally {
-      setLoading(false);
-    }*/
   }
 
   return (
