@@ -22,24 +22,24 @@ export default function signin() {
   return (
     <View style={styles.container}>
       <View style={styles.formArea}>
-        {" "}
+        
         <View style={styles.brandingBar}>
-          {" "}
-          <Text style={styles.brandTitle}>Photo Forensic Detector</Text>{" "}
+          
+          <Text style={styles.brandTitle}>Photo Forensic Detector</Text>
           <Text style={styles.brandTagline}>
             Detect suspicious information in images.
-          </Text>{" "}
+          </Text>
         </View>
         <View style={styles.imageRow}>
-          {" "}
+          
           <Image
             source={require("../../assets/images/actualimgs/camera.png")}
             style={styles.brandImage}
-          />{" "}
+          />
           <Image
             source={require("../../assets/images/actualimgs/magnifying-glass.png")}
             style={styles.brandImage}
-          />{" "}
+          />
         </View>
         <Text style={styles.headline}>Sign In</Text>
         <Text>Email:</Text>
