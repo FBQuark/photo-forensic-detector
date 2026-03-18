@@ -4,6 +4,7 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
+  Image,
 } from "react-native";
 import { useState } from "react";
 import { Link, useRouter } from "expo-router";
@@ -31,9 +32,28 @@ export default function signup() {
 
   return (
     <View style={styles.container}>
-      <View>
+      {" "}
+      <View style={styles.formArea}>
+        {" "}
+        <View style={styles.brandingBar}>
+          {" "}
+          <Text style={styles.brandTitle}>Photo Forensic Detector</Text>{" "}
+          <Text style={styles.brandTagline}>
+            Detect suspicious information in images.
+          </Text>{" "}
+        </View>
+        <View style={styles.imageRow}>
+          {" "}
+          <Image
+            source={require("../../assets/images/actualimgs/camera.png")}
+            style={styles.brandImage}
+          />{" "}
+          <Image
+            source={require("../../assets/images/actualimgs/magnifying-glass.png")}
+            style={styles.brandImage}
+          />{" "}
+        </View>
         <Text style={styles.headline}>Sign Up</Text>
-
         <Text>First Name:</Text>
         <TextInput
           placeholder="Enter your first name..."
@@ -42,7 +62,6 @@ export default function signup() {
           value={firstName}
           onChangeText={setFirstName}
         />
-
         <Text>Last Name:</Text>
         <TextInput
           placeholder="Enter your last name..."
@@ -51,7 +70,6 @@ export default function signup() {
           value={lastName}
           onChangeText={setLastName}
         />
-
         <Text>Email:</Text>
         <TextInput
           placeholder="Enter your email..."
@@ -62,7 +80,6 @@ export default function signup() {
           autoCapitalize="none"
           keyboardType="email-address"
         />
-
         <Text>Password:</Text>
         <TextInput
           placeholder="Enter your password..."
@@ -72,11 +89,9 @@ export default function signup() {
           onChangeText={setPassword}
           secureTextEntry
         />
-
         <TouchableOpacity style={styles.button} onPress={handleSubmit}>
           <Text style={styles.buttonText}>Create Account</Text>
         </TouchableOpacity>
-
         <View style={styles.footer}>
           <Text>Already have an account? </Text>
           <Link href="/signin" style={styles.link}>
@@ -91,18 +106,53 @@ export default function signup() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: "white",
+  },
+  brandingBar: {
+    backgroundColor: "#364153",
+    alignItems: "center",
+    paddingVertical: 32,
+    paddingHorizontal: 20,
+    gap: 12,
+    marginHorizontal: -20,
+    marginTop: -20,
+  },
+  brandTitle: {
+    color: "white",
+    fontSize: 22,
+    fontWeight: "700",
+    textAlign: "center",
+  },
+  brandTagline: {
+    color: "#9ca3af",
+    fontSize: 13,
+    textAlign: "center",
+  },
+  imageRow: {
+    flexDirection: "row",
+    gap: 80,
+    marginTop: 50,
+    marginBottom: 50,
+    justifyContent: "center",
+  },
+  brandImage: {
+    width: 56,
+    height: 56,
+    resizeMode: "contain",
+  },
+  formArea: {
+    flex: 1,
     padding: 20,
     justifyContent: "center",
-    backgroundColor: "white",
   },
   headline: {
     textAlign: "center",
-    marginTop: -100,
-    marginBottom: 50,
+
+    marginBottom: 24,
     fontWeight: "700",
     fontStyle: "italic",
-    fontSize: 24,
-    color: "black",
+    fontSize: 22,
+    color: "#364153",
   },
   input: {
     borderWidth: 1,
@@ -115,7 +165,7 @@ const styles = StyleSheet.create({
     color: "black",
   },
   button: {
-    backgroundColor: "black",
+    backgroundColor: "#364153",
     padding: 12,
     borderRadius: 6,
     alignItems: "center",
@@ -131,6 +181,6 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   link: {
-    color: "blue",
+    color: "#364153",
   },
 });
