@@ -4,8 +4,12 @@ import tempfile
 import subprocess
 import json
 
+
+from Forensic_algorithm import analyze_image
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+
+
 
 app = FastAPI()
 
@@ -79,14 +83,21 @@ async def upload_image(file: UploadFile = File(...)): #get the file from the fro
         print("=== METADATA RECEIVED ===") #print a notice that the metadata was recieved 
         print(json.dumps(metadata, indent=2)[:3000])  # avoids dumping too much
 
+        result = analyze_image(temp_path)
+
+        print("=== ALGORITHM RESULT ===")
+        print(json.dumps(result, indent=2))
+
+
         return { #returning information to the backend (whoever picks this up just needs to return the results of the algorithm to the frontend so this will be changed)
-            "message": "message received",
+            "message": "analysis complete",
             "filename": file.filename,
             "content_type": file.content_type,
             "size_bytes": file_size,
             "metadata_found": True,
-            "metadata_keys": list(metadata.keys())[:20],  # quick proof
-            "metadata": metadata,  # you can remove this later if too large
+            "metadata_keys": list(metadata.keys())[:20],
+            "metadata": metadata,
+            "analysis": result  
         }
 
     except HTTPException:
