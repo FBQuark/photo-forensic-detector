@@ -120,7 +120,6 @@ def analyze_image(image_path: str):
 
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
 
-    # resize + crop (same as your code)
     h, w = img_rgb.shape[:2]
     scale = IMG_SIZE / min(h, w)
     img_rgb = cv2.resize(img_rgb, (int(round(w * scale)), int(round(h * scale))))

@@ -83,7 +83,7 @@ async def upload_image(file: UploadFile = File(...)): #get the file from the fro
         print("=== METADATA RECEIVED ===") #print a notice that the metadata was recieved 
         print(json.dumps(metadata, indent=2)[:3000])  # avoids dumping too much
 
-        result = analyze_image(temp_path)
+        result = analyze_image(temp_path) #call to algorithm to analyze image
 
         print("=== ALGORITHM RESULT ===")
         print(json.dumps(result, indent=2))
