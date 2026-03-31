@@ -3,107 +3,290 @@ import shutil
 import tempfile
 import subprocess
 import json
+from fractions import Fraction
 
-
-from Forensic_algorithm import analyze_image
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 
-
+from app.Forensic_algorithm import analyze_image, get_exiftool_command
 
 app = FastAPI()
 
+# Enable CORS so frontend apps can call this backend API
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-@app.get("/health") #health route to check for the api health and connectivity 
-async def health_check():
-    return {"status": "ok"}
-
-
-def extract_exif_metadata(image_path: str) -> dict | None: # this was taken directly from her algorithm, it runs that command using exiftool(needs to be installed on ur system and on path)
-    image_path = str(image_path)
-    cmd = ["exiftool", "-json", "-n", "-a", "-u", "-U", "-g1", "-G1", image_path]
-    res = subprocess.run(cmd, capture_output=True, text=True) #runs the command with the image path 
-
-    if res.returncode != 0: #if it didnt work print why 
-        print("=== EXIFTOOL ERROR ===")
-        print(res.stderr)
+# Robust parser for EXIF values:
+# Handles fractions, strings, numeric values, and list-based metadata safely
+def parse_fraction_like(x):
+    if x is None:
         return None
-
     try:
-        data = json.loads(res.stdout) #convert the data into a pretty python json 
-        d = data[0] if isinstance(data, list) and data else data #chatGPT generated... honestly not too confident on its purpose. something to do with if its a list or not **look into more**
-        return d if isinstance(d, dict) else None #return only if the output is a python dictionary(maybe not necessary for passing to the real algorithm)
-    except Exception as e: #catch any exceptions and throw 
-        print("=== JSON PARSE ERROR ===")
-        print(str(e))
+        if isinstance(x, list) and len(x) > 0:
+            x = x[0]
+        return float(Fraction(str(x).strip()))
+    except Exception:
+        try:
+            return float(x)
+        except Exception:
+            return None
+
+
+# Convert shutter speed into readable format like 1/200 or 0.5s
+def fmt_shutter_value(t):
+    if t is None:
         return None
-  
-
-@app.post("/upload-image")
-async def upload_image(file: UploadFile = File(...)): #get the file from the frontent
-    temp_path = None
-    try:
-        original_name = file.filename or "uploaded_file"
-        _, ext = os.path.splitext(original_name) #getting only the extension from the filename (.png etc)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp: #chatGPT generated. since the algorithm expects a file path this function will essentially create a temp file in 
-            #memory, we then save this temp path to use for the path passing later 
-            temp_path = tmp.name
-            shutil.copyfileobj(file.file, tmp) #copying the data from the photo passed in to the temp file 
-
-        file_size = os.path.getsize(temp_path) #getting the size of the file 
+    if t >= 1.0:
+        return f"{t:.1f}s"
+    if t > 0:
+        return f"1/{int(round(1 / t))}"
+    return "0s"
 
 
-        #for debugging purposes print basic file information
-        print("=== MESSAGE RECEIVED ===")
-        print(f"filename: {file.filename}")
-        print(f"content_type: {file.content_type}")
-        print(f"temp_path: {temp_path}")
-        print(f"size_bytes: {file_size}")
+# Health route:
+# Checks if backend is running and whether exiftool is installed correctly
+@app.get("/health")
+async def health():
+    exiftool_cmd = get_exiftool_command()
+    exiftool_available = exiftool_cmd is not None
+    exiftool_version = None
 
-        metadata = extract_exif_metadata(temp_path) #call the metadata extraction function
-
-        if metadata is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to extract metadata with exiftool",
+    if exiftool_cmd:
+        try:
+            result = subprocess.run(
+                [exiftool_cmd, "-ver"],
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
+            if result.returncode == 0:
+                exiftool_version = result.stdout.strip()
+            else:
+                exiftool_available = False
+        except Exception:
+            exiftool_available = False
 
-        print("=== METADATA RECEIVED ===") #print a notice that the metadata was recieved 
-        print(json.dumps(metadata, indent=2)[:3000])  # avoids dumping too much
+    return {
+        "status": "ok",
+        "exiftool_command": exiftool_cmd,
+        "exiftool_available": exiftool_available,
+        "exiftool_version": exiftool_version,
+    }
 
-        result = analyze_image(temp_path) #call to algorithm to analyze image
 
-        print("=== ALGORITHM RESULT ===")
-        print(json.dumps(result, indent=2))
+# Extract raw EXIF metadata from image using exiftool
+def extract_exif(image_path: str):
+    exiftool_cmd = get_exiftool_command()
+
+    try:
+        cmd = [exiftool_cmd, "-json", "-n", image_path]
+
+        res = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if res.returncode != 0:
+            return {}
+
+        data = json.loads(res.stdout)
+
+        if not data:
+            return {}
+
+        return data[0]
+
+    except Exception:
+        return {}
 
 
-        return { #returning information to the backend (whoever picks this up just needs to return the results of the algorithm to the frontend so this will be changed)
-            "message": "analysis complete",
-            "filename": file.filename,
-            "content_type": file.content_type,
-            "size_bytes": file_size,
-            "metadata_found": True,
-            "metadata_keys": list(metadata.keys())[:20],
-            "metadata": metadata,
-            "analysis": result  
+# Extract important camera exposure values from metadata
+# These are later compared against model predictions
+def extract_actual(metadata: dict):
+    exposure_time = parse_fraction_like(metadata.get("ExposureTime"))
+
+    iso_value = metadata.get("ISO")
+    if iso_value is None:
+        iso_value = metadata.get("ISOSpeedRatings")
+
+    return {
+        "ISO": parse_fraction_like(iso_value),
+        "F": parse_fraction_like(metadata.get("FNumber")),
+        "T": exposure_time,
+        "shutter_display": fmt_shutter_value(exposure_time),
+    }
+
+
+# Compare AI-predicted camera settings with actual EXIF values
+# Then generate authenticity verdict, confidence, and forgery score
+def compute_authenticity(predicted, actual, metadata):
+    if not metadata:
+        return {
+            "verdict": "NO_EXIF",
+            "confidence": "LOW",
+            "forgery_score": 0.2,
+            "reason": "No metadata found. Image may be a screenshot, edited export, or metadata-stripped file.",
         }
 
-    except HTTPException:
-        raise
+    # Check whether useful camera metadata is available
+    useful_camera_fields = [
+        metadata.get("ISO"),
+        metadata.get("ISOSpeedRatings"),
+        metadata.get("FNumber"),
+        metadata.get("ExposureTime"),
+        metadata.get("Model"),
+        metadata.get("Make"),
+    ]
+
+    if not any(v is not None for v in useful_camera_fields):
+        return {
+            "verdict": "NO_EXIF",
+            "confidence": "LOW",
+            "forgery_score": 0.2,
+            "reason": "No useful camera metadata found.",
+        }
+
+    # Metadata exists, but exposure fields needed for comparison are missing
+    if not actual or not any(
+        [
+            actual.get("ISO") is not None,
+            actual.get("F") is not None,
+            actual.get("T") is not None,
+        ]
+    ):
+        return {
+            "verdict": "SUSPICIOUS",
+            "confidence": "LOW",
+            "forgery_score": 0.4,
+            "reason": "Metadata exists, but camera exposure parameters are missing.",
+        }
+
+    # If model prediction fails, authenticity cannot be judged reliably
+    if not predicted:
+        return {
+            "verdict": "UNKNOWN",
+            "confidence": "LOW",
+            "forgery_score": 0.5,
+            "reason": "Model prediction unavailable.",
+        }
+
+    score = 0
+
+    try:
+        # Compare predicted ISO with actual ISO
+        if predicted.get("iso") is not None and actual.get("ISO") is not None:
+            if abs(predicted["iso"] - actual["ISO"]) > 100:
+                score += 1
+
+        # Compare predicted aperture with actual aperture
+        if predicted.get("f_stop") is not None and actual.get("F") is not None:
+            if abs(predicted["f_stop"] - actual["F"]) > 1.5:
+                score += 1
+
+        # Compare predicted shutter speed with actual shutter speed
+        if predicted.get("t_sec") is not None and actual.get("T") is not None:
+            if abs(predicted["t_sec"] - actual["T"]) > 0.02:
+                score += 1
+
+    except Exception:
+        return {
+            "verdict": "UNKNOWN",
+            "confidence": "LOW",
+            "forgery_score": 0.5,
+            "reason": "Comparison error",
+        }
+
+    # Final decision based on total mismatch score
+    if score == 0:
+        return {
+            "verdict": "REAL",
+            "confidence": "HIGH",
+            "forgery_score": 0.1,
+            "reason": "EXIF camera values are consistent with AI prediction.",
+        }
+
+    if score == 1:
+        return {
+            "verdict": "SUSPICIOUS",
+            "confidence": "MEDIUM",
+            "forgery_score": 0.6,
+            "reason": "Partial mismatch between EXIF and AI prediction.",
+        }
+
+    return {
+        "verdict": "FAKE",
+        "confidence": "HIGH",
+        "forgery_score": 0.9,
+        "reason": "Strong mismatch detected between EXIF and AI prediction.",
+    }
+
+
+# Upload route:
+# Saves uploaded image temporarily, extracts EXIF metadata,
+# runs forensic model, compares results, and returns final JSON response
+@app.post("/upload")
+async def upload(file: UploadFile = File(...)):
+    temp_path = None
+
+    try:
+        if not file:
+            return {"success": False, "error": "No file uploaded"}
+
+        _, ext = os.path.splitext(file.filename or ".jpg")
+
+        # Save uploaded file to a temporary location
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            temp_path = tmp.name
+            shutil.copyfileobj(file.file, tmp)
+
+        file_size = os.path.getsize(temp_path)
+
+        # Extract metadata and actual camera settings
+        metadata = extract_exif(temp_path)
+        actual = extract_actual(metadata)
+
+        # Run the forensic model to get predicted exposure values
+        try:
+            model_output = analyze_image(temp_path)
+            predicted = model_output.get("predicted", {}) if model_output else {}
+        except Exception:
+            predicted = {}
+
+        # Compute authenticity verdict from metadata vs prediction
+        decision = compute_authenticity(predicted, actual, metadata)
+
+        return {
+            "success": True,
+            "filename": file.filename,
+            "size_bytes": file_size,
+            "verdict": decision["verdict"],
+            "confidence": decision["confidence"],
+            "forgery_score": decision["forgery_score"],
+            "reason": decision["reason"],
+            "predicted": predicted,
+            "truth": {
+                "ISO": actual.get("ISO"),
+                "F": actual.get("F"),
+                "T": actual.get("shutter_display") or actual.get("T"),
+            },
+            "exif": metadata,
+        }
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "success": False,
+            "error": str(e),
+        }
+
     finally:
+        # Always delete temporary uploaded file after processing
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
