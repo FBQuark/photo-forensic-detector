@@ -1,98 +1,113 @@
-import { useContext, createContext, useState, useEffect } from "react";
-import { Text } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { useContext, createContext, useState, useEffect} from "react";
+import {Text} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context"; //safeareaview ensures that no UI elements are hidden underneath things like the dynamic island and such 
 import { account } from "@/lib/appwrite";
 import { Models, ID } from "react-native-appwrite";
 
 type AuthContextType = {
-  session: boolean;
+  session: true | null;
   user: Models.User<Models.Preferences> | null;
   signin: (args: { email: string; password: string }) => Promise<void>;
-  signup: (args: { email: string; password: string; fullName: string }) => Promise<void>;
+  signup:(args: {email: string, password:string, fullName:string}) => Promise<void>;
   signout: () => Promise<void>;
+};
+type AuthProviderProps = {
+  children: React.ReactNode;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [loading, setLoading] = useState(true);
-  const [session, setSession] = useState(false);
-  const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
+const AuthProvider = ({ children }: AuthProviderProps) => {
+    const [loading, setLoading] = useState(true);
+    const [session, setSession] = useState<true | null>(null);
+    const [user, setUser] = useState<Models.User<Models.Preferences> | null>(null);
 
-  useEffect(() => {
-    checkAuth();
-  }, []);
+    useEffect(() => {
+        init();
+    }, []);
 
-  const checkAuth = async () => {
-    try {
-      const responseUser = await account.get();
-      setUser(responseUser);
-      setSession(true);
-    } catch {
-      setUser(null);
-      setSession(false);
-    } finally {
-      setLoading(false);
+    const init = async () => {
+        checkAuth()
     }
-  };
 
-  const signin = async ({ email, password }: { email: string; password: string }) => {
-    setLoading(true);
-    try {
-      await account.createEmailPasswordSession(email, password);
-      const responseUser = await account.get();
+    const checkAuth = async () => {
+        try{
+            const responseUser = await(account.get())
+            setUser(responseUser)
+            setSession(true)
+        }catch(error){
+            console.log(error)
+        }
+        setLoading(false)
+    };
 
-      setUser(responseUser);
-      setSession(true);
-    } catch (error: any) {
-      throw new Error(error?.message || "Login failed");
-    } finally {
-      setLoading(false);
-    }
-  };
+    const signin = async({email, password}: { email: string; password: string }) => {
+        setLoading(true);
+        try{
+            await account.createEmailPasswordSession({email, password});
+            const responseUser = await account.get()
+            setUser(responseUser)
+            setSession(true)
+        }catch(error){
+            console.log(error)
+        }
+        setLoading(false);
+    };
+    
+    const signout = async() => {
+        setLoading(true)
+        account.deleteSession({
+            sessionId: 'current'});
+        setSession(null)
+        setUser(null)
+        setLoading(false)
+    };
 
-  const signup = async ({ email, password, fullName }: any) => {
-    setLoading(true);
-    try {
-      await account.create(ID.unique(), email, password, fullName);
-      await account.createEmailPasswordSession(email, password);
+    const signup = async ({
+        email,
+        password,
+        fullName,
+    }: {
+        email:string;
+        password:string;
+        fullName:string;
+    }) => {
+        setLoading(true);
+        try {
+            await account.create({
+                userId: ID.unique(),
+                email,
+                password,
+                name: fullName
+            });
+        } catch(error){
+            console.log(error)
+        }
+        setLoading(false)
+    };
 
-      const responseUser = await account.get();
-      setUser(responseUser);
-      setSession(true);
-    } catch (error: any) {
-      throw new Error(error?.message || "Signup failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const signout = async () => {
-    setLoading(true);
-    try {
-      await account.deleteSession("current");
-    } finally {
-      setUser(null);
-      setSession(false);
-      setLoading(false);
-    }
-  };
-
-  return (
-    <AuthContext.Provider value={{ session, user, signin, signout, signup }}>
-      {loading ? (
-        <SafeAreaView>
-          <Text>Loading...</Text>
-        </SafeAreaView>
-      ) : (
-        children
-      )}
-    </AuthContext.Provider>
-  );
+    const contextData = {session, user, signin, signout, signup};
+    return (
+        <AuthContext.Provider value={contextData}>
+            {loading ? (
+                <SafeAreaView>
+                    <Text>loading...</Text>
+                </SafeAreaView>
+            ) : ( 
+                children
+            )}
+        </AuthContext.Provider>
+    );
 };
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) throw new Error("useAuth must be used within AuthProvider");
-  return context;
+const useAuth = () => {
+    const context = useContext(AuthContext);
+
+    if (!context) {
+        throw new Error("useAuth must be used within an AuthProvider");
+    }
+
+    return context;
 };
+
+export {useAuth, AuthContext, AuthProvider};
