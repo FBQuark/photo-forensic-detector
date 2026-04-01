@@ -169,7 +169,6 @@ def analyze_image(image_path: str):
         verdict = "SUSPICIOUS" if delta_ev > 1.5 else "CONSISTENT"
 
         result["truth"] = {
-            "camera_make": truth["Make"],
             "iso": truth["ISO"],
             "f_stop": truth["F"],
             "shutter_seconds": truth["T"],
@@ -181,13 +180,8 @@ def analyze_image(image_path: str):
         result["verdict"] = verdict
 
         result["details"]["threshold"] = 1.5
-        result["details"]["explanation"] = (
-            "EV difference compares predicted exposure vs EXIF exposure. "
-            "Large differences suggest metadata inconsistency."
-        )
 
     else:
         result["verdict"] = "NO_EXIF"
-        result["details"]["explanation"] = "No usable EXIF data found."
 
     return result
