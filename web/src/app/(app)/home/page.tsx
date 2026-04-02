@@ -9,8 +9,9 @@ export default function HomePage() {
   const { user, signout } = useAuth();
 
   const [message, setMessage] = useState("");
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [results, setResults] = useState<any[]>([]);
 
   const handleSignout = async () => {
     try {
@@ -22,52 +23,63 @@ export default function HomePage() {
   };
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    const file = acceptedFiles[0] || null;
-
-    if (!file) {
-      setSelectedFile(null);
-      setMessage("No file selected");
+    if (!acceptedFiles || acceptedFiles.length === 0) {
+      setSelectedFiles([]);
+      setMessage("No files selected");
       return;
     }
 
-    setSelectedFile(file);
-    setMessage(`Selected: ${file.name}`);
+    const limitedFiles = acceptedFiles.slice(0, 10);
+
+    setSelectedFiles(limitedFiles);
+    setResults([]);
+    setMessage(`${limitedFiles.length} file(s) selected`);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    multiple: false,
+    multiple: true,
+    maxFiles: 10,
     accept: {
       "image/*": [],
     },
   });
 
   const handleSubmit = async () => {
-    if (!selectedFile) {
-      setMessage("Please select an image first");
+    if (selectedFiles.length === 0) {
+      setMessage("Please select at least one image first");
       return;
     }
 
     setIsSubmitting(true);
     setMessage("Processing...");
+    setResults([]);
+
+    const collectedResults: any[] = [];
 
     try {
-      const formData = new FormData(); //need to use formdata because json cant send files
-      formData.append("file", selectedFile);
+      for (const file of selectedFiles) {
+        const formData = new FormData(); // need to use formdata because json cant send files
+        formData.append("file", file);
 
-      const res = await axios.post(
-        "http://127.0.0.1:8000/upload-image",
-        formData,
-      );
+        const res = await axios.post(
+          "http://127.0.0.1:8000/upload-image",
+          formData
+        );
 
-      console.log("Response:", res.data);
+        console.log("Response:", res.data);
 
-      setMessage(
-        `Processed: ${res.data.filename} (${res.data.size_bytes} bytes)`,
-      );
+        collectedResults.push({
+          originalFileName: file.name,
+          response: res.data,
+        });
+      }
+
+      setResults(collectedResults);
+      setMessage(`Finished processing ${collectedResults.length} file(s)`);
     } catch (error: any) {
       console.error(error);
-      setMessage(error);
+      setMessage(error?.message || "Upload failed");
     } finally {
       setIsSubmitting(false);
     }
@@ -119,11 +131,11 @@ export default function HomePage() {
           >
             <input {...getInputProps()} />
             {isDragActive ? (
-              <p className="text-gray-700">Drop the image here...</p>
+              <p className="text-gray-700">Drop the images here...</p>
             ) : (
               <div className="space-y-2">
                 <p className="text-lg font-medium text-gray-800">
-                  Drag and drop an image here
+                  Drag and drop up to 10 images here
                 </p>
                 <p className="text-sm text-gray-500">
                   or click to browse files
@@ -131,16 +143,25 @@ export default function HomePage() {
               </div>
             )}
           </div>
-          {selectedFile && (
+
+          {selectedFiles.length > 0 && (
             <div className="rounded-md bg-gray-50 border border-gray-200 p-3 text-sm text-gray-700">
               <p>
-                <b>File:</b> {selectedFile.name}
+                <b>Files selected:</b> {selectedFiles.length}
               </p>
-              <p>
-                <b>Size:</b> {selectedFile.size} bytes
-              </p>
+              {selectedFiles.map((file, index) => (
+                <div key={index} className="mt-2">
+                  <p>
+                    <b>File {index + 1}:</b> {file.name}
+                  </p>
+                  <p>
+                    <b>Size:</b> {file.size} bytes
+                  </p>
+                </div>
+              ))}
             </div>
           )}
+
           <button
             type="button"
             onClick={handleSubmit}
@@ -149,8 +170,15 @@ export default function HomePage() {
           >
             {isSubmitting ? "Processing..." : "Submit"}
           </button>
+
           {message && (
             <p className="text-sm text-center text-gray-600">{message}</p>
+          )}
+
+          {results.length > 0 && (
+            <div className="rounded-md bg-black text-green-400 p-4 text-sm overflow-x-auto">
+              <pre>{JSON.stringify(results, null, 2)}</pre>
+            </div>
           )}
         </div>
       </div>

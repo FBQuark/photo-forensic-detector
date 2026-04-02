@@ -1,33 +1,116 @@
-import { Text, View, StyleSheet, TouchableOpacity } from "react-native";
+import { Text, View, StyleSheet, TouchableOpacity, ScrollView } from "react-native";
+import { useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { SafeAreaView } from "react-native-safe-area-context";
+import * as ImagePicker from "expo-image-picker";
+import axios from "axios";
 
 export default function Index() {
-  const { user, session, signout } = useAuth();
+  const { user, signout } = useAuth();
+
+  const [message, setMessage] = useState("");
+  const [selectedPhotos, setSelectedPhotos] = useState<any[]>([]);
+  const [results, setResults] = useState<any[]>([]);
+  const API_URL = process.env.EXPO_PUBLIC_API_URL;
+
+  
+  const pickImages = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+    if (!permission.granted) {
+      setMessage("Permission required");
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: 10,
+    });
+
+    if (result.canceled) {
+      setMessage("No images selected");
+      return;
+    }
+
+    setSelectedPhotos(result.assets.slice(0, 10));
+    setMessage(`${result.assets.length} selected`);
+  };
+
+  
+  const uploadImages = async () => {
+    if (selectedPhotos.length === 0) {
+      setMessage("Select images first");
+      return;
+    }
+
+    setMessage("Uploading...");
+    const collectedResults: any[] = [];
+
+    for (const photo of selectedPhotos) {
+      const formData = new FormData();
+
+      formData.append("file", {
+        uri: photo.uri,
+        name: photo.fileName || "image.jpg",
+        type: photo.mimeType || "image/jpeg",
+      } as any);
+
+      const res = await axios.post(
+        `${API_URL}/upload-image`, formData
+      );
+
+      collectedResults.push(res.data);
+    }
+
+    setResults(collectedResults);
+    setMessage("Done");
+  };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.headerText}>Photo Forensic Detector</Text>
-      </View>
-      <View style={styles.welcomeSection}>
-        <Text style={styles.welcomeText}>
-          Welcome, upload your files below to scan for suspiscious data.
-        </Text>
-      </View>
-      <TouchableOpacity style={styles.uploadButton}>
-        <Text style={styles.uploadButtonText}>Upload Image</Text>
-      </TouchableOpacity>
-      <View style={styles.footer}>
-        {user && <Text style={styles.greeting}>Logged in as {user.name}.</Text>}
-        <TouchableOpacity style={styles.logoutButton} onPress={signout}>
-          <Text style={styles.logoutButtonText}>Logout</Text>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
+        <View style={styles.header}>
+          <Text style={styles.headerText}>Photo Forensic Detector</Text>
+        </View>
+
+        <View style={styles.welcomeSection}>
+          <Text style={styles.welcomeText}>
+            Upload images from your camera roll
+          </Text>
+        </View>
+
+        <TouchableOpacity style={styles.uploadButton} onPress={pickImages}>
+          <Text style={styles.uploadButtonText}>Select Images</Text>
         </TouchableOpacity>
-      </View>
+
+        <TouchableOpacity style={styles.uploadButton} onPress={uploadImages}>
+          <Text style={styles.uploadButtonText}>Upload</Text>
+        </TouchableOpacity>
+
+        {message && (
+          <Text style={{ textAlign: "center", marginTop: 10 }}>{message}</Text>
+        )}
+
+        {/* 🧾 RAW JSON OUTPUT */}
+        {results.length > 0 && (
+          <View style={{ padding: 20 }}>
+            <Text selectable>
+              {JSON.stringify(results, null, 2)}
+            </Text>
+          </View>
+        )}
+
+        <View style={styles.footer}>
+          {user && <Text style={styles.greeting}>Logged in as {user.name}.</Text>}
+          <TouchableOpacity style={styles.logoutButton} onPress={signout}>
+            <Text style={styles.logoutButtonText}>Logout</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,

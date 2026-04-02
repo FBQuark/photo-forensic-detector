@@ -72,16 +72,6 @@ async def upload_image(file: UploadFile = File(...)): #get the file from the fro
         print(f"temp_path: {temp_path}")
         print(f"size_bytes: {file_size}")
 
-        metadata = extract_exif_metadata(temp_path) #call the metadata extraction function
-
-        if metadata is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Failed to extract metadata with exiftool",
-            )
-
-        print("=== METADATA RECEIVED ===") #print a notice that the metadata was recieved 
-        print(json.dumps(metadata, indent=2)[:3000])  # avoids dumping too much
 
         result = analyze_image(temp_path) #call to algorithm to analyze image
 
@@ -89,17 +79,10 @@ async def upload_image(file: UploadFile = File(...)): #get the file from the fro
         print(json.dumps(result, indent=2))
 
 
-        return { #returning information to the backend (whoever picks this up just needs to return the results of the algorithm to the frontend so this will be changed)
-            "message": "analysis complete",
+        return { #return the results of the algorithm as well as the filename for display purposes (could maybe be done on the backend we will see)
             "filename": file.filename,
-            "content_type": file.content_type,
-            "size_bytes": file_size,
-            "metadata_found": True,
-            "metadata_keys": list(metadata.keys())[:20],
-            "metadata": metadata,
-            "analysis": result  
+            "analysis": result
         }
-
     except HTTPException:
         raise
     except Exception as e:
