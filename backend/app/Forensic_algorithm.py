@@ -144,8 +144,6 @@ def analyze_image(image_path: str):
 
     # --- build JSON response ---
     result = {
-        "image_path": image_path,
-
         "predicted": {
             "iso": round(p_iso),
             "f_stop": round(p_f, 2),
@@ -169,7 +167,6 @@ def analyze_image(image_path: str):
         verdict = "SUSPICIOUS" if delta_ev > 1.5 else "CONSISTENT"
 
         result["truth"] = {
-            "camera_make": truth["Make"],
             "iso": truth["ISO"],
             "f_stop": truth["F"],
             "shutter_seconds": truth["T"],
@@ -179,13 +176,6 @@ def analyze_image(image_path: str):
 
         result["delta_ev"] = round(delta_ev, 4)
         result["verdict"] = verdict
-
-        result["details"]["threshold"] = 1.5
-        result["details"]["explanation"] = (
-            "EV difference compares predicted exposure vs EXIF exposure. "
-            "Large differences suggest metadata inconsistency."
-        )
-
     else:
         result["verdict"] = "NO_EXIF"
         result["details"]["explanation"] = "No usable EXIF data found."

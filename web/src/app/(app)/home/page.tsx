@@ -11,6 +11,7 @@ export default function HomePage() {
   const [message, setMessage] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDownloadingCsv, setIsDownloadingCsv] = useState(false);
   const [results, setResults] = useState<any[]>([]);
 
   const handleSignout = async () => {
@@ -25,6 +26,7 @@ export default function HomePage() {
   const onDrop = useCallback((acceptedFiles: File[]) => {
     if (!acceptedFiles || acceptedFiles.length === 0) {
       setSelectedFiles([]);
+      setResults([]);
       setMessage("No files selected");
       return;
     }
@@ -69,52 +71,79 @@ export default function HomePage() {
 
         console.log("Response:", res.data);
 
-        collectedResults.push({
-          originalFileName: file.name,
-          response: res.data,
-        });
+        collectedResults.push(res.data);
       }
 
       setResults(collectedResults);
       setMessage(`Finished processing ${collectedResults.length} file(s)`);
     } catch (error: any) {
       console.error(error);
-      setMessage(error?.message || "Upload failed");
+      setMessage(error?.response?.data?.detail || error?.message || "Upload failed");
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  function capitalize(str: string): string {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
+  const handleDownloadCsv = async () => {
+    if (results.length === 0) {
+      setMessage("No results available to download");
+      return;
+    }
+
+    setIsDownloadingCsv(true);
+
+    try {
+      const res = await axios.post(
+        "http://127.0.0.1:8000/download-csv",
+        results,
+        {
+          responseType: "blob",
+        }
+      );
+
+      const blob = new Blob([res.data], { type: "text/csv" });
+      const url = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "analysis_results.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      window.URL.revokeObjectURL(url);
+
+      setMessage("CSV downloaded successfully");
+    } catch (error: any) {
+      console.error(error);
+      setMessage(
+        error?.response?.data?.detail || error?.message || "CSV download failed"
+      );
+    } finally {
+      setIsDownloadingCsv(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
-      {" "}
       {/* this makes it 2 levels*/}
       {/* Header bar */}
       <header className="w-full bg-gray-900 py-4">
-        {" "}
         <h1 className="text-center text-white text-2xl font-bold">
-          {" "}
           Photo Forensic Detector
         </h1>
       </header>
+
       <div className="flex flex-1 items-center justify-center px-4">
-        {" "}
         <div className="w-full max-w-xl bg-white rounded-xl shadow-md p-8 space-y-6">
-          {" "}
           <div className="text-center py-2">
-            {" "}
             <h2 className="text-xl font-semibold text-gray-700">
-              {" "}
               Welcome, upload your files below to scan for suspiscious data.
             </h2>
           </div>
+
           <div className="flex items-center justify-between gap-4">
             <p className="text-lg text-gray-600">
-              {" "}
               Logged in as {user?.name || "User"}.
             </p>
 
@@ -125,6 +154,7 @@ export default function HomePage() {
               Logout
             </button>
           </div>
+
           <div
             {...getRootProps()}
             className="border-2 border-dashed border-gray-300 rounded-lg p-10 text-center cursor-pointer hover:border-gray-400 transition-colors bg-gray-50"
@@ -170,6 +200,17 @@ export default function HomePage() {
           >
             {isSubmitting ? "Processing..." : "Submit"}
           </button>
+
+          {results.length > 0 && (
+            <button
+              type="button"
+              onClick={handleDownloadCsv}
+              disabled={isDownloadingCsv}
+              className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-500 transition-colors disabled:bg-blue-300"
+            >
+              {isDownloadingCsv ? "Downloading CSV..." : "Download Results as CSV"}
+            </button>
+          )}
 
           {message && (
             <p className="text-sm text-center text-gray-600">{message}</p>

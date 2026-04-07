@@ -3,11 +3,15 @@ import shutil
 import tempfile
 import subprocess
 import json
+import csv
+import io
 
 
 from Forensic_algorithm import analyze_image
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+
 
 
 
@@ -25,30 +29,41 @@ app.add_middleware(
 )
 
 
+def flatten_result_for_csv(data: dict) -> dict:
+    analysis = data.get("analysis", {})
+    predicted = analysis.get("predicted", {})
+    truth = analysis.get("truth")
+    details = analysis.get("details", {})
+
+    return {
+        "filename": data.get("filename"),
+
+        "predicted_iso": predicted.get("iso"),
+        "predicted_f_stop": predicted.get("f_stop"),
+        "predicted_shutter_seconds": predicted.get("shutter_seconds"),
+        "predicted_shutter_display": predicted.get("shutter_display"),
+        "predicted_ev": predicted.get("ev"),
+
+        "truth_iso": truth.get("iso") if truth else None,
+        "truth_f_stop": truth.get("f_stop") if truth else None,
+        "truth_shutter_seconds": truth.get("shutter_seconds") if truth else None,
+        "truth_shutter_display": truth.get("shutter_display") if truth else None,
+        "truth_ev": truth.get("ev") if truth else None,
+
+        "delta_ev": analysis.get("delta_ev"),
+        "verdict": analysis.get("verdict"),
+
+        "device_used": details.get("device_used"),
+        "model_input_size": details.get("model_input_size"),
+        "explanation": details.get("explanation", ""),
+    }
+
+
+
 @app.get("/health") #health route to check for the api health and connectivity 
 async def health_check():
     return {"status": "ok"}
 
-
-def extract_exif_metadata(image_path: str) -> dict | None: # this was taken directly from her algorithm, it runs that command using exiftool(needs to be installed on ur system and on path)
-    image_path = str(image_path)
-    cmd = ["exiftool", "-json", "-n", "-a", "-u", "-U", "-g1", "-G1", image_path]
-    res = subprocess.run(cmd, capture_output=True, text=True) #runs the command with the image path 
-
-    if res.returncode != 0: #if it didnt work print why 
-        print("=== EXIFTOOL ERROR ===")
-        print(res.stderr)
-        return None
-
-    try:
-        data = json.loads(res.stdout) #convert the data into a pretty python json 
-        d = data[0] if isinstance(data, list) and data else data #chatGPT generated... honestly not too confident on its purpose. something to do with if its a list or not **look into more**
-        return d if isinstance(d, dict) else None #return only if the output is a python dictionary(maybe not necessary for passing to the real algorithm)
-    except Exception as e: #catch any exceptions and throw 
-        print("=== JSON PARSE ERROR ===")
-        print(str(e))
-        return None
-  
 
 @app.post("/upload-image")
 async def upload_image(file: UploadFile = File(...)): #get the file from the frontent
@@ -90,3 +105,37 @@ async def upload_image(file: UploadFile = File(...)): #get the file from the fro
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+
+
+
+      
+      
+@app.post("/download-csv")
+async def download_csv(results: list[dict] = Body(...)): #get the already computed frontend results and convert them into a downloadable csv
+    try:
+        if not results:
+            raise HTTPException(status_code=400, detail="No results were provided.")
+
+        rows = [flatten_result_for_csv(result) for result in results]
+
+        if not rows:
+            raise HTTPException(status_code=400, detail="No valid rows could be created.")
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=rows[0].keys())
+        writer.writeheader()
+        writer.writerows(rows)
+        output.seek(0)
+
+        return StreamingResponse(
+            iter([output.getvalue()]),
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": "attachment; filename=analysis_results.csv"
+            }
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
