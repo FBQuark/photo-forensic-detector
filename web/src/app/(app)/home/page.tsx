@@ -103,12 +103,8 @@ export default function HomePage() {
       );
 
       console.log("Zip response:", res.data);
-
-      // if your backend returns all_results directly:
+      
       setResults(res.data);
-
-      // if your backend returns { zip_filename, count, results } instead, use:
-      // setResults(res.data.results);
 
       setMessage(`Finished processing zip file`);
       return;
