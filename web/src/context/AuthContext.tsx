@@ -1,5 +1,6 @@
 /*
-Just converted the mobile code to web version - Joe
+removed the unnessecary loading screens during login/signup and made it so the error messages actually get thrown back
+to the user - Joe
 */
 
 "use client";
@@ -46,24 +47,20 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
     };
 
     const signin = async({email, password}: { email: string; password: string }) => {
-        setLoading(true);
         try{
             await account.createEmailPasswordSession({email, password});
             const responseUser = await account.get()
             setUser(responseUser)
             setSession(true)
         }catch(error){
-            console.log(error)
+            throw error;
         }
-        setLoading(false);
     };
 
     const signout = async() => {
-        setLoading(true)
         await account.deleteSession({sessionId: 'current'});
         setSession(null)
         setUser(null)
-        setLoading(false)
     };
 
     const signup = async ({
@@ -75,7 +72,6 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
         password:string;
         fullName:string;
     }) => {
-        setLoading(true);
         try {
             await account.create({
                 userId: ID.unique(),
@@ -84,9 +80,8 @@ const AuthProvider = ({ children }: AuthProviderProps) => {
                 name: fullName
             });
         } catch(error){
-            console.log(error)
+            throw error;
         }
-        setLoading(false)
     };
 
     const contextData = {session, user, signin, signout, signup};

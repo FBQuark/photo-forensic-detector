@@ -9,8 +9,11 @@ import { useState } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/context/AuthContext";
+import { useRouter} from "next/navigation";
 
 export default function Signup() {
+    const router = useRouter();
+
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
@@ -24,7 +27,7 @@ export default function Signup() {
     try {
       const fullName = `${firstName} ${lastName}`; //combines the first and last name into one text field
       await signup({ email, password, fullName }); //sends info to auth for it to handle signuo
-      setMessage("Account Created Successfully");
+      router.push("/login");//redirect to login page after sign up
     } catch (error: any) {
       setMessage(error?.message || "Sign Up Failed"); //communicate to the user any errors
     }
@@ -107,7 +110,7 @@ export default function Signup() {
             </button>
           </form>
 
-          {message && <p>{message}</p>}
+          {message && <p className="text-red-500 text-sm text-center">{message}</p>}
 
           <p className="text-black text-center">
             Already have an account?{" "}
