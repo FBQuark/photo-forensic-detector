@@ -1,10 +1,10 @@
 import os
 import shutil
 import tempfile
-import subprocess
 import json
 import csv
 import io
+import zipfile
 
 
 from Forensic_algorithm import analyze_image
@@ -139,3 +139,93 @@ async def download_csv(results: list[dict] = Body(...)): #get the already comput
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+@app.post("/upload-zip")
+async def upload_zip(file: UploadFile = File(...)): #get the zip file from the frontend, extract it, and process top-level images only
+    zip_path = None
+    extract_dir = None
+
+    try:
+        original_name = file.filename or "uploaded_zip"
+        _, ext = os.path.splitext(original_name)
+
+        if ext.lower() != ".zip":
+            raise HTTPException(status_code=400, detail="Only .zip files are supported.")
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_zip:
+            zip_path = tmp_zip.name
+            shutil.copyfileobj(file.file, tmp_zip)
+
+        zip_size = os.path.getsize(zip_path)
+
+        #for debugging purposes print basic zip information
+        print("=== ZIP MESSAGE RECEIVED ===")
+        print(f"filename: {file.filename}")
+        print(f"content_type: {file.content_type}")
+        print(f"zip_path: {zip_path}")
+        print(f"size_bytes: {zip_size}")
+
+        extract_dir = tempfile.mkdtemp()
+
+        with zipfile.ZipFile(zip_path, "r") as zip_ref:
+            zip_ref.extractall(extract_dir)
+
+        supported_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+        all_results = []
+
+        # check top-level contents
+        top_level_items = os.listdir(extract_dir)
+        working_dir = extract_dir
+
+        # if the zip contains one wrapping folder, step into it
+        if len(top_level_items) == 1:
+            possible_folder = os.path.join(extract_dir, top_level_items[0])
+            if os.path.isdir(possible_folder):
+                print(f"FOUND WRAPPER FOLDER: {top_level_items[0]}")
+                working_dir = possible_folder
+
+        # process only one level deep, ignore any subfolders
+        for name in os.listdir(working_dir):
+            full_path = os.path.join(working_dir, name)
+
+            if os.path.isdir(full_path):
+                print(f"IGNORING SUBFOLDER: {name}")
+                continue
+
+            _, file_ext = os.path.splitext(name)
+            if file_ext.lower() not in supported_extensions:
+                print(f"IGNORING NON-IMAGE FILE: {name}")
+                continue
+
+            file_size = os.path.getsize(full_path)
+
+            print("=== EXTRACTED IMAGE FOUND ===")
+            print(f"filename: {name}")
+            print(f"path: {full_path}")
+            print(f"size_bytes: {file_size}")
+
+            result = analyze_image(full_path)
+
+            print("=== ALGORITHM RESULT ===")
+            print(json.dumps(result, indent=2))
+
+            all_results.append({
+                "filename": name,
+                "analysis": result
+            })
+
+        return all_results  # return same shape as multi-image frontend expects
+
+    except HTTPException:
+        raise
+    except zipfile.BadZipFile:
+        raise HTTPException(status_code=400, detail="Invalid or corrupted zip file.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if zip_path and os.path.exists(zip_path):
+            os.remove(zip_path)
+
+        if extract_dir and os.path.exists(extract_dir):
+            shutil.rmtree(extract_dir)
