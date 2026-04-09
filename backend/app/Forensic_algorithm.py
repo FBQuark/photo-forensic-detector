@@ -6,6 +6,7 @@ import os
 import math
 import subprocess
 import json
+import shutil
 from fractions import Fraction
 from torchvision.models import resnet18
 
@@ -27,7 +28,10 @@ def parse_fraction_like(x):
         except: return None
 
 def get_robust_exif(img_path):
-    cmd = ["exiftool", "-json", "-n", img_path]
+    exiftool_path = shutil.which("exiftool")
+    if exiftool_path is None:
+        return None;
+    cmd = [exiftool_path, "-json", "-n", img_path]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0: return None
     try:

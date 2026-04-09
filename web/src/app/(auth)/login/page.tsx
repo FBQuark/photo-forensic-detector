@@ -7,8 +7,10 @@ spiffed up the UI a little bit - Joe
 import { useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { useRouter} from "next/navigation";
 
 export default function Login() {
+    const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -19,9 +21,9 @@ export default function Login() {
     e.preventDefault(); //prevents the browser from refreshing on submission
     try {
       await signin({ email, password }); //send the signin info to auth to handle it
-      setMessage("Login Successful");
+      router.push("/home"); //redirect to the home page
     } catch (error: any) {
-      setMessage(error?.message || "Login Failed"); //communicates with the user any errors that happen
+      setMessage(error?.message || "Invalid email or password."); //communicates with the user any errors that happen
     }
   };
 
@@ -89,7 +91,7 @@ export default function Login() {
           </form>
           {/*moved sign out button out of the form so clicking it won't trigger form submission
               and only shows logout button if a session exists*/}
-          {message && <p>{message}</p>}
+          {message && <p className="text-red-500 text-sm text-center">{message}</p>}
           <p className="text-black text-center">
             Don&apos;t have an account?{" "}
             <Link href="/signup" className="text-gray-700 font-bold">

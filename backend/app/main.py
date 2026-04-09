@@ -4,6 +4,7 @@ import tempfile
 import json
 import csv
 import io
+import tempfile
 import zipfile
 
 
@@ -11,6 +12,9 @@ from Forensic_algorithm import analyze_image
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from fastapi import Form
+from fpdf import FPDF
+from PIL import Image as PILImage
 
 
 
@@ -229,3 +233,117 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
 
         if extract_dir and os.path.exists(extract_dir):
             shutil.rmtree(extract_dir)
+
+
+@app.post("/download-pdf")
+async def download_pdf(files: list[UploadFile] = File(...), results: str = Form(...)): #get the already computed frontend results and convert them into a downloadable pdf
+    temp_paths = [];
+    try:
+        #parses the JSON string back into a dictionary list
+        results_data = json.loads(results)
+        if not results_data:
+            raise HTTPException(status_code=400, detail="No results were provided.")
+        #loops through each file, gets the extension, saves it to a temp file, and stores that temp path in the list
+        for file in files:
+            _, ext = os.path.splitext(file.filename or "image.jpg")
+            with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+                shutil.copyfileobj(file.file, tmp)
+                temp_paths.append(tmp.name)
+
+        pdf = FPDF() #creates a new pdf document
+        pdf.set_auto_page_break(auto=True, margin=15) #creates a new page if the content gets too close to the bottom
+
+        #standard dimensions for A4 paper
+        PAGE_WIDTH = 190
+        PAGE_HEIGHT = 277 #minus margins
+        IMAGE_WIDTH = 90
+        MARGIN = 10
+        ROW_PADDING = 8 #space between rows
+
+        current_y = MARGIN
+        pdf.add_page()
+
+        #loops through the results and image paths dictionaries and pulls out the relevant data for each image
+        for i, (result, img_path) in enumerate(zip(results_data, temp_paths)):
+            analysis = result.get("analysis", {})
+            predicted = analysis.get("predicted", {})
+            truth = analysis.get("truth")
+            verdict = analysis.get("verdict", "N/A")
+            delta_ev = analysis.get("delta_ev", "N/A")
+            filename = result.get("filename", f"Image {i + 1}")
+
+            text_lines = 6 #a line for each result being written
+            if truth: text_lines += 4
+            text_block_height = text_lines * 7 + 8 # 7px per line, 8px for file name title
+
+            #get dimensions of the image and scale it proportionally
+            with PILImage.open(img_path) as img:
+                img_w, img_h = img.size
+            image_height = IMAGE_WIDTH * img_h / img_w
+
+            row_height = max(image_height, text_block_height)
+            #if the image is too big for the page, goes to the next one
+            if current_y + row_height > PAGE_HEIGHT:
+                pdf.add_page()
+                current_y = MARGIN
+
+            pdf.image(img_path, x=MARGIN, y=current_y, w=IMAGE_WIDTH) #embeds the image into the page
+            #writes text to the right
+            pdf.set_xy(110,current_y)
+            pdf.set_font("Arial", "B", size=12)
+            pdf.cell(0,8, f"File: {filename}", ln=True)
+
+            #writes all the results info to the cells
+            pdf.set_font("Arial", size=10)
+            pdf.set_x(110)
+            pdf.cell(0, 7, f"Verdict: {verdict}", ln=True)
+            pdf.set_x(110)
+            pdf.cell(0, 7, f"Delta EV: {delta_ev}", ln=True)
+            pdf.set_x(110)
+            pdf.cell(0, 7, f"Predicted ISO: {predicted.get('iso', 'N/A')}", ln=True)
+            pdf.set_x(110)
+            pdf.cell(0, 7, f"Predicted F-Stop: {predicted.get('f_stop', 'N/A')}", ln=True)
+            pdf.set_x(110)
+            pdf.cell(0, 7, f"Predicted Shutter: {predicted.get('shutter_display', 'N/A')}", ln=True)
+            pdf.set_x(110)
+            pdf.cell(0, 7, f"Predicted EV: {predicted.get('ev', 'N/A')}", ln=True)
+            if truth:
+                pdf.set_x(110)
+                pdf.cell(0, 7, f"True ISO: {truth.get('iso', 'N/A')}", ln=True)
+                pdf.set_x(110)
+                pdf.cell(0, 7, f"True F-Stop: {truth.get('f_stop', 'N/A')}", ln=True)
+                pdf.set_x(110)
+                pdf.cell(0, 7, f"True Shutter: {truth.get('shutter_display', 'N/A')}", ln=True)
+                pdf.set_x(110)
+                pdf.cell(0, 7, f"True EV: {truth.get('ev', 'N/A')}", ln=True)
+            #advances y past this row
+            current_y += ROW_PADDING + row_height
+
+            #after each image, draws a gray line in between each image
+            if i < len(results_data) - 1:
+                pdf.ln(5)
+                pdf.set_draw_color(180, 180, 180)
+                pdf.line(MARGIN, current_y - ROW_PADDING /2, 200, current_y - ROW_PADDING /2)
+
+        #converts the pdf into the bytes
+        pdf_bytes = pdf.output()
+        buffer = io.BytesIO(bytes(pdf_bytes))
+        buffer.seek(0)
+
+        #sends the pdf back to the frontend
+        return StreamingResponse(
+            buffer,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": "attachment; filename=analysis_results.pdf"
+            }
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        #deletes all the temporary paths created
+        for path in temp_paths:
+            if os.path.exists(path):
+                os.remove(path)

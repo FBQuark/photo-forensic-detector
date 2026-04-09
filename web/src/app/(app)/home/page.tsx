@@ -12,6 +12,7 @@ export default function HomePage() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDownloadingCsv, setIsDownloadingCsv] = useState(false);
+  const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [results, setResults] = useState<any[]>([]);
 
   const handleSignout = async () => {
@@ -176,6 +177,59 @@ export default function HomePage() {
     }
   };
 
+const handleDownloadPDF = async () => {
+    if (results.length === 0) {
+      setMessage("No results available to download");
+      return;
+    }
+
+    setIsDownloadingPDF(true);
+
+    try {
+        const formData = new FormData();
+
+        //append each image file to the data
+        for (const file of selectedFiles){
+            //puts the images under the key "files"
+            formData.append("files", file);
+        }
+        //JSON stringify the results so that the image data and the results data can both be  sent together to the backend
+        //puts the results under the key "results"
+        formData.append("results", JSON.stringify(results));
+
+        //tells the backend to treat the data as raw data instead of text
+        const res = await axios.post(
+          "http://127.0.0.1:8000/download-pdf",
+          formData,
+          {
+            responseType: "blob",
+          }
+        );
+
+        //creates a link that downloads the image
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+        //creates a temp invisible element that the link is assigned to, clicks the link, then deletes the element
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "analysis_results.pdf";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      window.URL.revokeObjectURL(url);
+
+      setMessage("PDF downloaded successfully");
+    } catch (error: any) {
+      console.error(error);
+      setMessage(
+        error?.response?.data?.detail || error?.message || "PDF download failed"
+      );
+    } finally {
+      setIsDownloadingPDF(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 flex flex-col">
       {/* this makes it 2 levels*/}
@@ -254,14 +308,24 @@ export default function HomePage() {
           </button>
 
           {results.length > 0 && (
-            <button
-              type="button"
-              onClick={handleDownloadCsv}
-              disabled={isDownloadingCsv}
-              className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-500 transition-colors disabled:bg-blue-300"
-            >
-              {isDownloadingCsv ? "Downloading CSV..." : "Download Results as CSV"}
-            </button>
+            <>
+                <button
+                  type="button"
+                  onClick={handleDownloadCsv}
+                  disabled={isDownloadingCsv}
+                  className="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-500 transition-colors disabled:bg-blue-300"
+                >
+                  {isDownloadingCsv ? "Downloading CSV..." : "Download Results as CSV"}
+                </button>
+                <button
+                    type="button"
+                    onClick={handleDownloadPDF}
+                    disabled={isDownloadingPDF}
+                    className="w-full bg-red-500 text-white py-2 rounded-md hover:bg-red-400 transition-colors disabled:bg-red-300"
+                >
+                    {isDownloadingPDF ? "Downloading PDF..." : "Download Results as PDF"}
+                </button>
+            </>
           )}
 
           {message && (
