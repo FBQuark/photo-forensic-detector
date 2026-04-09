@@ -24,19 +24,49 @@ export default function HomePage() {
     }
   };
 
+  const isZipFile = (file: File) => {
+    return (
+      file.name.toLowerCase().endsWith(".zip") ||
+      file.type === "application/zip" ||
+      file.type === "application/x-zip-compressed"
+    );
+  };
+
+  const isImageFile = (file: File) => {
+    return file.type.startsWith("image/");
+  };
+
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    if (!acceptedFiles || acceptedFiles.length === 0) {
+  if (!acceptedFiles || acceptedFiles.length === 0) {
+    setSelectedFiles([]);
+    setResults([]);
+    setMessage("No files selected");
+    return;
+  }
+
+  const zipFiles = acceptedFiles.filter(isZipFile);
+  const imageFiles = acceptedFiles.filter(isImageFile);
+
+  // if a zip is present, only allow exactly one zip and nothing else
+  if (zipFiles.length > 0) {
+    if (acceptedFiles.length > 1) {
       setSelectedFiles([]);
       setResults([]);
-      setMessage("No files selected");
+      setMessage("Please upload either one zip file or image files, not both.");
       return;
     }
 
-    const limitedFiles = acceptedFiles.slice(0, 10);
-
-    setSelectedFiles(limitedFiles);
+    setSelectedFiles([zipFiles[0]]);
     setResults([]);
-    setMessage(`${limitedFiles.length} file(s) selected`);
+    setMessage(`1 zip file selected: ${zipFiles[0].name}`);
+    return;
+  }
+
+  const limitedFiles = imageFiles.slice(0, 10);
+
+  setSelectedFiles(limitedFiles);
+  setResults([]);
+  setMessage(`${limitedFiles.length} image file(s) selected`);
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -45,35 +75,57 @@ export default function HomePage() {
     maxFiles: 10,
     accept: {
       "image/*": [],
+      "application/zip": [".zip"],
+      "application/x-zip-compressed": [".zip"],
     },
   });
 
   const handleSubmit = async () => {
-    if (selectedFiles.length === 0) {
-      setMessage("Please select at least one image first");
+  if (selectedFiles.length === 0) {
+    setMessage("Please select at least one file first");
+    return;
+  }
+
+  setIsSubmitting(true);
+  setMessage("Processing...");
+  setResults([]);
+
+  try {
+    const firstFile = selectedFiles[0];
+
+    // zip upload path
+    if (isZipFile(firstFile)) {
+      const formData = new FormData();
+      formData.append("file", firstFile);
+
+      const res = await axios.post(
+        "http://127.0.0.1:8000/upload-zip",
+        formData
+      );
+
+      console.log("Zip response:", res.data);
+      
+      setResults(res.data);
+
+      setMessage(`Finished processing zip file`);
       return;
     }
 
-    setIsSubmitting(true);
-    setMessage("Processing...");
-    setResults([]);
-
+    // normal image upload path
     const collectedResults: any[] = [];
 
-    try {
-      for (const file of selectedFiles) {
-        const formData = new FormData(); // need to use formdata because json cant send files
-        formData.append("file", file);
+    for (const file of selectedFiles) {
+      const formData = new FormData();
+      formData.append("file", file);
 
-        const res = await axios.post(
-          "http://127.0.0.1:8000/upload-image",
-          formData
-        );
+      const res = await axios.post(
+        "http://127.0.0.1:8000/upload-image",
+        formData
+      );
 
-        console.log("Response:", res.data);
-
-        collectedResults.push(res.data);
-      }
+      console.log("Image response:", res.data);
+      collectedResults.push(res.data);
+    }
 
       setResults(collectedResults);
       setMessage(`Finished processing ${collectedResults.length} file(s)`);
