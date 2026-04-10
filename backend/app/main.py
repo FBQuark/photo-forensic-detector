@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 
 
-from Forensic_algorithm import analyze_image
+from .Forensic_algorithm import analyze_image
 from fastapi import FastAPI, UploadFile, File, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -31,7 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+def get_exiftool_command():
+    import shutil
+    return shutil.which("exiftool")
 
 def flatten_result_for_csv(data: dict) -> dict:
     analysis = data.get("analysis", {})
