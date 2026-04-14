@@ -31,7 +31,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+def get_exiftool_command():
+    import shutil
+    return shutil.which("exiftool")
 
 def flatten_result_for_csv(data: dict) -> dict:
     analysis = data.get("analysis", {})
