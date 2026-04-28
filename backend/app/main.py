@@ -31,9 +31,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-def get_exiftool_command():
-    import shutil
-    return shutil.which("exiftool")
+
 
 def flatten_result_for_csv(data: dict) -> dict:
     analysis = data.get("analysis", {})
@@ -278,45 +276,66 @@ async def download_pdf(files: list[UploadFile] = File(...), results: str = Form(
             if truth: text_lines += 4
             text_block_height = text_lines * 7 + 8 # 7px per line, 8px for file name title
 
-            #get dimensions of the image and scale it proportionally
-            with PILImage.open(img_path) as img:
-                img_w, img_h = img.size
-            image_height = IMAGE_WIDTH * img_h / img_w
+            #resize the image for display so the file size stays small
+            IMAGE_WIDTH_PX = 340
+            thumb_path = None
+            try:
+                with PILImage.open(img_path) as img:
+                    img_w, img_h = img.size
+                    scale = IMAGE_WIDTH_PX / img_w #calculates how much to scale the image down
+                    new_h = int(img_h * scale) #keeps proportions the same
+                    #algorithm to actually resize the image down
+                    resized = img.resize((IMAGE_WIDTH_PX, new_h), PILImage.LANCZOS)
 
-            row_height = max(image_height, text_block_height)
-            #if the image is too big for the page, goes to the next one
-            if current_y + row_height > PAGE_HEIGHT:
-                pdf.add_page()
-                current_y = MARGIN
+                    #ensures the color palette is in a format that JPEG can use
+                    if resized.mode in ("RGBA", "P"):
+                        resized = resized.convert("RGB")
+                    #creates a temporary file of the thumbnail to be referenced later when embedding
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as tmp:
+                        resized.save(tmp.name, "JPEG", quality = 75)
+                        thumb_path = tmp.name
 
-            pdf.image(img_path, x=MARGIN, y=current_y, w=IMAGE_WIDTH) #embeds the image into the page
+                #ensures there is enough room for the image/text to be displayed on the page
+                image_height = IMAGE_WIDTH * img_h / img_w
+                row_height = max(image_height, text_block_height)
+                if current_y + row_height > PAGE_HEIGHT: #if there isn't enough room, add a new page
+                    pdf.add_page()
+                    current_y = MARGIN
+                #embeds the thumbnail in the PDF
+                pdf.image(thumb_path, x=MARGIN, y=current_y, w=IMAGE_WIDTH)
+            finally:
+                #deletes the thumbnail file even if the embedding process failed
+                if thumb_path and os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+
             #writes text to the right
-            pdf.set_xy(110,current_y)
+            TEXT_MARGIN = 110
+            pdf.set_xy(TEXT_MARGIN,current_y)
             pdf.set_font("Arial", "B", size=12)
             pdf.cell(0,8, f"File: {filename}", ln=True)
 
             #writes all the results info to the cells
             pdf.set_font("Arial", size=10)
-            pdf.set_x(110)
+            pdf.set_x(TEXT_MARGIN)
             pdf.cell(0, 7, f"Verdict: {verdict}", ln=True)
-            pdf.set_x(110)
+            pdf.set_x(TEXT_MARGIN)
             pdf.cell(0, 7, f"Delta EV: {delta_ev}", ln=True)
-            pdf.set_x(110)
+            pdf.set_x(TEXT_MARGIN)
             pdf.cell(0, 7, f"Predicted ISO: {predicted.get('iso', 'N/A')}", ln=True)
-            pdf.set_x(110)
+            pdf.set_x(TEXT_MARGIN)
             pdf.cell(0, 7, f"Predicted F-Stop: {predicted.get('f_stop', 'N/A')}", ln=True)
-            pdf.set_x(110)
+            pdf.set_x(TEXT_MARGIN)
             pdf.cell(0, 7, f"Predicted Shutter: {predicted.get('shutter_display', 'N/A')}", ln=True)
-            pdf.set_x(110)
+            pdf.set_x(TEXT_MARGIN)
             pdf.cell(0, 7, f"Predicted EV: {predicted.get('ev', 'N/A')}", ln=True)
             if truth:
-                pdf.set_x(110)
+                pdf.set_x(TEXT_MARGIN)
                 pdf.cell(0, 7, f"True ISO: {truth.get('iso', 'N/A')}", ln=True)
-                pdf.set_x(110)
+                pdf.set_x(TEXT_MARGIN)
                 pdf.cell(0, 7, f"True F-Stop: {truth.get('f_stop', 'N/A')}", ln=True)
-                pdf.set_x(110)
+                pdf.set_x(TEXT_MARGIN)
                 pdf.cell(0, 7, f"True Shutter: {truth.get('shutter_display', 'N/A')}", ln=True)
-                pdf.set_x(110)
+                pdf.set_x(TEXT_MARGIN)
                 pdf.cell(0, 7, f"True EV: {truth.get('ev', 'N/A')}", ln=True)
             #advances y past this row
             current_y += ROW_PADDING + row_height
