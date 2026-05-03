@@ -77,38 +77,33 @@ class TriadResNet18(nn.Module):
 
 
 def build_13ch_sync(img_rgb):
+    img_lin = np.where(
+        img_rgb <= 0.04045,
+        img_rgb / 12.92,
+        ((img_rgb + 0.055) / 1.055) ** 2.4
+    )
 
-    img_lin = np.where(img_rgb <= 0.04045, img_rgb / 12.92, ((img_rgb + 0.055) / 1.055) ** 2.4)
     r, g, b = img_lin[..., 0], img_lin[..., 1], img_lin[..., 2]
     gray = 0.2989 * r + 0.5870 * g + 0.1140 * b
 
-    sobelx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
-    sobely = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
-    lap = cv2.Laplacian(gray, cv2.CV_32F, ksize=3)
+    sobelx = cv2.Sobel(gray, cv2.CV_32F, 1, 0)
+    sobely = cv2.Sobel(gray, cv2.CV_32F, 0, 1)
+    lap = cv2.Laplacian(gray, cv2.CV_32F)
     gradmag = np.hypot(sobelx, sobely)
+
     hp_small = gray - cv2.GaussianBlur(gray, (3, 3), 0.8)
     hp_large = gray - cv2.GaussianBlur(gray, (9, 9), 2.0)
+
     m = cv2.GaussianBlur(gray, (7, 7), 1.5)
     v = np.clip(cv2.GaussianBlur(gray * gray, (7, 7), 1.5) - m * m, 0, None)
-    log = cv2.Laplacian(cv2.GaussianBlur(gray, (0, 0), 1.0), cv2.CV_32F, ksize=3)
+
+    log = cv2.Laplacian(cv2.GaussianBlur(gray, (0, 0), 1.0), cv2.CV_32F)
     mixg = cv2.Scharr(gray, cv2.CV_32F, 1, 0) + cv2.Scharr(gray, cv2.CV_32F, 0, 1)
 
-    K = {"sobel": 8.0, "lap": 4.0, "grad": 8.0, "hp_s": 1.5, "hp_l": 1.5, "var": 0.2, "log": 4.0, "mixg": 16.0}
-    ch = [
-        r, g, b, gray,
-        np.clip(0.5 + sobelx / K["sobel"], 0, 1),
-        np.clip(0.5 + sobely / K["sobel"], 0, 1),
-        np.clip(0.5 + lap / K["lap"], 0, 1),
-        np.clip(gradmag / K["grad"], 0, 1),
-        np.clip(0.5 + hp_small / K["hp_s"], 0, 1),
-        np.clip(0.5 + hp_large / K["hp_l"], 0, 1),
-        np.clip(v / K["var"], 0, 1),
-        np.clip(0.5 + log / K["log"], 0, 1),
-        np.clip(0.5 + mixg / K["mixg"], 0, 1),
-    ]
+    ch = [r, g, b, gray, sobelx, sobely, lap, gradmag, hp_small, hp_large, v, log, mixg]
     x13 = np.stack(ch, axis=0).astype(np.float32)
-    return (x13 - x13.mean()) / (x13.std() + 1e-6)
 
+    return (x13 - x13.mean()) / (x13.std() + 1e-6)
 
 model = TriadResNet18(in_ch=13).to(DEVICE)
 model.load_state_dict(torch.load(WEIGHTS_PATH, map_location=DEVICE))
@@ -167,8 +162,13 @@ def analyze_image(image_path: str):
     }
 
     if truth:
+        if truth["EV"] >= 10:
+            threshold = 5
+        else:
+            threshold = 2.5
+
         delta_ev = abs(p_ev_val - truth["EV"])
-        verdict = "SUSPICIOUS" if delta_ev > 1.5 else "CONSISTENT"
+        verdict = "SUSPICIOUS" if delta_ev > threshold else "CONSISTENT"
 
         result["truth"] = {
             "iso": truth["ISO"],
