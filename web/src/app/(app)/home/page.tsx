@@ -3,34 +3,13 @@
 import { useAuth } from "@/context/AuthContext";
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
+import { getBackendJWT } from "@/lib/appwrite";
+import { useRouter } from "next/navigation"; 
 import axios from "axios";
+import AnalysisResults, {
+  type AnalysisResult
+} from "@/app/components/analysisResults";
 
-type AnalysisResult = {
-  filename: string;
-  analysis: {
-    predicted?: {
-      iso?: number;
-      f_stop?: number;
-      shutter_seconds?: number;
-      shutter_display?: string;
-      ev?: number;
-    };
-    truth?: {
-      iso?: number;
-      f_stop?: number;
-      shutter_seconds?: number;
-      shutter_display?: string;
-      ev?: number;
-    } | null;
-    delta_ev?: number | null;
-    verdict?: string;
-    details?: {
-      device_used?: string;
-      model_input_size?: number;
-      explanation?: string;
-    };
-  };
-};
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (axios.isAxiosError(error)) {
@@ -65,6 +44,7 @@ export default function HomePage() {
   const [isDownloadingCsv, setIsDownloadingCsv] = useState(false);
   const [results, setResults] = useState<AnalysisResult[]>([]);
 
+  const router = useRouter(); 
   const handleSignout = async () => {
     try {
       await signout();
@@ -135,7 +115,7 @@ export default function HomePage() {
     setPreviewUrls(urls);
     setResults([]);
     setMessage(`${limitedFiles.length} image file(s) selected`);
-  }, []);
+  }, [previewUrls]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -154,6 +134,14 @@ export default function HomePage() {
       return;
     }
 
+    const jwt = await getBackendJWT();
+
+    const authConfig = {
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+      },
+    };
+
     setIsSubmitting(true);
     setMessage("Processing...");
     setResults([]);
@@ -167,7 +155,8 @@ export default function HomePage() {
 
         const res = await axios.post<AnalysisResult[]>(
           "http://127.0.0.1:8000/upload-zip",
-          formData
+          formData,
+          authConfig
         );
 
         setResults(res.data);
@@ -183,8 +172,10 @@ export default function HomePage() {
 
         const res = await axios.post<AnalysisResult>(
           "http://127.0.0.1:8000/upload-image",
-          formData
+          formData,
+          authConfig
         );
+
         collectedResults.push(res.data);
       }
 
@@ -206,9 +197,13 @@ export default function HomePage() {
     setIsDownloadingCsv(true);
 
     try {
-      const res = await axios.post("http://127.0.0.1:8000/download-csv", results, {
-        responseType: "blob",
-      });
+      const res = await axios.post(
+        "http://127.0.0.1:8000/download-csv",
+        results,
+        {
+          responseType: "blob",
+        }
+      );
 
       const blob = new Blob([res.data], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
@@ -247,9 +242,13 @@ export default function HomePage() {
 
       formData.append("results", JSON.stringify(results));
 
-      const res = await axios.post("http://127.0.0.1:8000/download-pdf", formData, {
-        responseType: "blob",
-      });
+      const res = await axios.post(
+        "http://127.0.0.1:8000/download-pdf",
+        formData,
+        {
+          responseType: "blob",
+        }
+      );
 
       const blob = new Blob([res.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
@@ -269,27 +268,6 @@ export default function HomePage() {
     } finally {
       setIsDownloadingPDF(false);
     }
-  };
-
-  const getVerdictClasses = (verdict?: string) => {
-    switch (verdict) {
-      case "REAL":
-      case "CONSISTENT":
-        return "bg-green-100 text-green-700 border-green-200";
-      case "SUSPICIOUS":
-        return "bg-yellow-100 text-yellow-700 border-yellow-200";
-      case "FAKE":
-        return "bg-red-100 text-red-700 border-red-200";
-      case "NO_EXIF":
-        return "bg-gray-100 text-gray-700 border-gray-200";
-      default:
-        return "bg-blue-100 text-blue-700 border-blue-200";
-    }
-  };
-
-  const formatValue = (value: string | number | null | undefined) => {
-    if (value === null || value === undefined || value === "") return "N/A";
-    return value;
   };
 
   return (
@@ -315,15 +293,25 @@ export default function HomePage() {
             <div className="mb-5 flex items-center justify-between gap-3 rounded-xl bg-slate-50 p-4">
               <div>
                 <p className="text-sm text-slate-500">Signed in as</p>
-                <p className="font-medium text-slate-800">{user?.name || "User"}</p>
+                <p className="font-medium text-slate-800">
+                  {user?.name || "User"}
+                </p>
               </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => router.push("/history")}
+                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+                >
+                  History
+                </button>
 
-              <button
-                onClick={handleSignout}
-                className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
-              >
-                Logout
-              </button>
+                <button
+                  onClick={handleSignout}
+                  className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+                >
+                  Logout
+                </button>
+              </div>
             </div>
 
             <div
@@ -331,6 +319,7 @@ export default function HomePage() {
               className="cursor-pointer rounded-2xl border-2 border-dashed border-slate-300 bg-slate-50 p-8 text-center transition hover:border-slate-400"
             >
               <input {...getInputProps()} />
+
               {isDragActive ? (
                 <p className="text-slate-700">Drop the files here...</p>
               ) : (
@@ -354,8 +343,12 @@ export default function HomePage() {
                 <div className="space-y-3">
                   {selectedFiles.map((file, index) => (
                     <div key={index} className="rounded-lg bg-white p-3 shadow-sm">
-                      <p className="text-sm font-medium text-slate-800">{file.name}</p>
-                      <p className="text-xs text-slate-500">{file.size} bytes</p>
+                      <p className="text-sm font-medium text-slate-800">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {file.size} bytes
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -378,7 +371,9 @@ export default function HomePage() {
                 disabled={isDownloadingCsv || results.length === 0}
                 className="w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-500 disabled:bg-blue-300"
               >
-                {isDownloadingCsv ? "Downloading CSV..." : "Download Results as CSV"}
+                {isDownloadingCsv
+                  ? "Downloading CSV..."
+                  : "Download Results as CSV"}
               </button>
 
               <button
@@ -387,7 +382,9 @@ export default function HomePage() {
                 disabled={isDownloadingPDF || results.length === 0}
                 className="w-full rounded-xl bg-red-500 py-3 font-semibold text-white transition hover:bg-red-400 disabled:bg-red-300"
               >
-                {isDownloadingPDF ? "Downloading PDF..." : "Download Results as PDF"}
+                {isDownloadingPDF
+                  ? "Downloading PDF..."
+                  : "Download Results as PDF"}
               </button>
 
               <button
@@ -407,182 +404,14 @@ export default function HomePage() {
             )}
           </div>
 
-          <div className="space-y-6">
-            {results.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm">
-                <h3 className="text-xl font-semibold text-slate-800">No results yet</h3>
-                <p className="mt-2 text-slate-500">
-                  Upload files and submit them to see analysis results here.
-                </p>
-              </div>
-            ) : (
-              results.map((result, index) => {
-                const analysis = result.analysis || {};
-                const predicted = analysis.predicted || {};
-                const truth = analysis.truth;
-                const verdict = analysis.verdict || "UNKNOWN";
-                const preview = previewUrls[index];
-
-                return (
-                  <div
-                    key={`${result.filename}-${index}`}
-                    className="rounded-2xl bg-white p-6 shadow-md"
-                  >
-                    <div className="grid gap-6 md:grid-cols-[220px_1fr]">
-                      <div>
-                        <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                          {preview ? (
-                            <img
-                              src={preview}
-                              alt={result.filename}
-                              className="h-56 w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex h-56 items-center justify-center text-sm text-slate-400">
-                              No preview available
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                          <div>
-                            <h3 className="text-xl font-bold text-slate-800">
-                              {result.filename}
-                            </h3>
-                            <p className="text-sm text-slate-500">
-                              Model input size: {formatValue(analysis.details?.model_input_size)}
-                            </p>
-                          </div>
-
-                          <span
-                            className={`rounded-full border px-4 py-1 text-sm font-semibold ${getVerdictClasses(
-                              verdict
-                            )}`}
-                          >
-                            {verdict}
-                          </span>
-                        </div>
-
-                        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                          <div className="rounded-xl bg-slate-50 p-4">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Predicted ISO
-                            </p>
-                            <p className="mt-2 text-lg font-semibold text-slate-800">
-                              {formatValue(predicted.iso)}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl bg-slate-50 p-4">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Predicted F-Stop
-                            </p>
-                            <p className="mt-2 text-lg font-semibold text-slate-800">
-                              {formatValue(predicted.f_stop)}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl bg-slate-50 p-4">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Predicted Shutter
-                            </p>
-                            <p className="mt-2 text-lg font-semibold text-slate-800">
-                              {formatValue(predicted.shutter_display)}
-                            </p>
-                          </div>
-
-                          <div className="rounded-xl bg-slate-50 p-4">
-                            <p className="text-xs uppercase tracking-wide text-slate-500">
-                              Predicted EV
-                            </p>
-                            <p className="mt-2 text-lg font-semibold text-slate-800">
-                              {formatValue(predicted.ev)}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="mt-5 grid gap-4 md:grid-cols-2">
-                          <div className="rounded-xl border border-slate-200 p-4">
-                            <h4 className="mb-3 font-semibold text-slate-800">Reference Data</h4>
-                            {truth ? (
-                              <div className="space-y-2 text-sm text-slate-600">
-                                <p>
-                                  <span className="font-medium text-slate-800">ISO:</span>{" "}
-                                  {formatValue(truth.iso)}
-                                </p>
-                                <p>
-                                  <span className="font-medium text-slate-800">F-Stop:</span>{" "}
-                                  {formatValue(truth.f_stop)}
-                                </p>
-                                <p>
-                                  <span className="font-medium text-slate-800">Shutter:</span>{" "}
-                                  {formatValue(truth.shutter_display)}
-                                </p>
-                                <p>
-                                  <span className="font-medium text-slate-800">EV:</span>{" "}
-                                  {formatValue(truth.ev)}
-                                </p>
-                              </div>
-                            ) : (
-                              <p className="text-sm text-slate-500">
-                                No usable EXIF reference data found.
-                              </p>
-                            )}
-                          </div>
-
-                          <div className="rounded-xl border border-slate-200 p-4">
-                            <h4 className="mb-3 font-semibold text-slate-800">Analysis Summary</h4>
-                            <div className="space-y-2 text-sm text-slate-600">
-                              <p>
-                                <span className="font-medium text-slate-800">Delta EV:</span>{" "}
-                                {formatValue(analysis.delta_ev)}
-                              </p>
-                              <p>
-                                <span className="font-medium text-slate-800">Device:</span>{" "}
-                                {formatValue(analysis.details?.device_used)}
-                              </p>
-                              <p>
-                                <span className="font-medium text-slate-800">Explanation:</span>{" "}
-                                {formatValue(analysis.details?.explanation)}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
+          <AnalysisResults
+            results={results}
+            previewUrls={previewUrls}
+            emptyTitle="No results yet"
+            emptyMessage="Upload files and submit them to see analysis results here."
+          />
         </div>
       </div>
     </div>
   );
 }
-
-// added proper TypeScript type (removed any)
-
-// added getErrorMessage() for better error handling
-
-// added image preview (previewUrls + URL.createObjectURL)
-
-// added cleanup for preview URLs (revokeObjectURL)
-
-// added Clear button (reset state)
-
-// added loading states (isDownloadingCSV / PDF)
-
-// improved UI (split layout: upload + results)
-
-// replaced raw JSON with structured result cards
-
-// added verdict color styling (REAL / FAKE / etc)
-
-// added formatValue() to avoid undefined/null issues
-
-// improved file handling (limit 10, zip vs images)
-
-// overall: upgraded from basic UI → full dashboard

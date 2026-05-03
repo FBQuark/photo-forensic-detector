@@ -9,12 +9,15 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import axios from "axios";
 import { Buffer } from "buffer";
 import { useAuth } from "@/context/AuthContext";
+import { getBackendJWT } from "@/lib/appwrite";
+import AnalysisResults from "../components/analysisResults";
 
 global.Buffer = global.Buffer || Buffer;
 
@@ -53,6 +56,7 @@ type SelectedPhoto = {
 };
 
 export default function Index() {
+  const router = useRouter();
   const { user, signout } = useAuth();
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
 
@@ -122,7 +126,8 @@ export default function Index() {
 
   const pickImages = async () => {
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
         setMessage("Permission required");
@@ -178,6 +183,8 @@ export default function Index() {
     setMessage("Processing...");
 
     try {
+      const jwt = await getBackendJWT();
+
       const collectedResults: AnalysisResult[] = [];
 
       for (let i = 0; i < selectedPhotos.length; i++) {
@@ -194,6 +201,7 @@ export default function Index() {
         const res = await axios.post(`${API_URL}/upload-image`, formData, {
           headers: {
             "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${jwt}`,
           },
           timeout: 120000,
         });
@@ -204,7 +212,9 @@ export default function Index() {
       setResults(collectedResults);
       setMessage(`Finished processing ${collectedResults.length} file(s)`);
     } catch (error: any) {
-      setMessage(error?.response?.data?.detail || error?.message || "Upload failed");
+      setMessage(
+        error?.response?.data?.detail || error?.message || "Upload failed",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -225,6 +235,8 @@ export default function Index() {
     setMessage("Preparing CSV...");
 
     try {
+      const jwt = await getBackendJWT();
+
       const response = await axios.post(`${API_URL}/download-csv`, results, {
         responseType: "arraybuffer",
         headers: {
@@ -256,7 +268,9 @@ export default function Index() {
       setMessage("CSV ready");
     } catch (error: any) {
       setMessage(
-        error?.response?.data?.detail || error?.message || "CSV download failed"
+        error?.response?.data?.detail ||
+          error?.message ||
+          "CSV download failed",
       );
     } finally {
       setIsDownloadingCsv(false);
@@ -278,6 +292,8 @@ export default function Index() {
     setMessage("Preparing PDF...");
 
     try {
+      const jwt = await getBackendJWT();
+
       const formData = new FormData();
 
       selectedPhotos.forEach((photo) => {
@@ -320,7 +336,11 @@ export default function Index() {
 
       setMessage("PDF ready");
     } catch (error: any) {
-      setMessage(error?.response?.data?.detail || error?.message || "PDF download failed");
+      setMessage(
+        error?.response?.data?.detail ||
+          error?.message ||
+          "PDF download failed",
+      );
     } finally {
       setIsDownloadingPDF(false);
     }
@@ -344,11 +364,22 @@ export default function Index() {
               <View style={styles.userCard}>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.userCardLabel}>Signed in as</Text>
-                  <Text style={styles.userCardName}>{user?.name || "User"}</Text>
+                  <Text style={styles.userCardName}>
+                    {user?.name || "User"}
+                  </Text>
                 </View>
 
-                <TouchableOpacity style={styles.logoutButton} onPress={handleSignout}>
+                <TouchableOpacity
+                  style={styles.logoutButton}
+                  onPress={handleSignout}
+                >
                   <Text style={styles.logoutButtonText}>Logout</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.logoutButton}
+                  onPress={() => router.push("/history")}
+                >
+                  <Text style={styles.logoutButtonText}>History</Text>
                 </TouchableOpacity>
               </View>
 
@@ -366,12 +397,17 @@ export default function Index() {
                   </Text>
 
                   {selectedPhotos.map((photo, index) => (
-                    <View key={`${photo.uri}-${index}`} style={styles.selectedFileItem}>
+                    <View
+                      key={`${photo.uri}-${index}`}
+                      style={styles.selectedFileItem}
+                    >
                       <Text style={styles.selectedFileName} numberOfLines={1}>
                         {photo.fileName || `image-${index + 1}.jpg`}
                       </Text>
                       <Text style={styles.selectedFileMeta}>
-                        {photo.fileSize ? `${photo.fileSize} bytes` : "Image file"}
+                        {photo.fileSize
+                          ? `${photo.fileSize} bytes`
+                          : "Image file"}
                       </Text>
                     </View>
                   ))}
@@ -399,7 +435,8 @@ export default function Index() {
                   style={[
                     styles.actionButton,
                     styles.csvButton,
-                    (isDownloadingCsv || results.length === 0) && styles.disabledButton,
+                    (isDownloadingCsv || results.length === 0) &&
+                      styles.disabledButton,
                   ]}
                   onPress={handleDownloadCsv}
                   disabled={isDownloadingCsv || results.length === 0}
@@ -407,7 +444,9 @@ export default function Index() {
                   {isDownloadingCsv ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.actionButtonText}>Download Results as CSV</Text>
+                    <Text style={styles.actionButtonText}>
+                      Download Results as CSV
+                    </Text>
                   )}
                 </TouchableOpacity>
 
@@ -415,7 +454,8 @@ export default function Index() {
                   style={[
                     styles.actionButton,
                     styles.pdfButton,
-                    (isDownloadingPDF || results.length === 0) && styles.disabledButton,
+                    (isDownloadingPDF || results.length === 0) &&
+                      styles.disabledButton,
                   ]}
                   onPress={handleDownloadPDF}
                   disabled={isDownloadingPDF || results.length === 0}
@@ -423,7 +463,9 @@ export default function Index() {
                   {isDownloadingPDF ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.actionButtonText}>Download Results as PDF</Text>
+                    <Text style={styles.actionButtonText}>
+                      Download Results as PDF
+                    </Text>
                   )}
                 </TouchableOpacity>
 
@@ -435,7 +477,9 @@ export default function Index() {
                       styles.disabledButton,
                   ]}
                   onPress={handleClear}
-                  disabled={isSubmitting || isDownloadingPDF || isDownloadingCsv}
+                  disabled={
+                    isSubmitting || isDownloadingPDF || isDownloadingCsv
+                  }
                 >
                   <Text style={styles.actionButtonText}>Clear</Text>
                 </TouchableOpacity>
@@ -450,149 +494,11 @@ export default function Index() {
           </View>
 
           <View style={styles.rightPanel}>
-            {resultsWithPreview.length === 0 ? (
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyStateTitle}>No results yet</Text>
-                <Text style={styles.emptyStateText}>
-                  Upload files and submit them to see analysis results here.
-                </Text>
-              </View>
-            ) : (
-              resultsWithPreview.map((result, index) => {
-                const analysis = result.analysis || {};
-                const predicted = analysis.predicted || {};
-                const truth = analysis.truth;
-                const verdict = analysis.verdict || "UNKNOWN";
-                const verdictStyle = getVerdictStyle(verdict);
-
-                return (
-                  <View key={`${result.filename}-${index}`} style={styles.resultCard}>
-                    <View style={styles.resultTop}>
-                      <View style={styles.previewWrapper}>
-                        {result.previewUri ? (
-                          <Image
-                            source={{ uri: result.previewUri }}
-                            style={styles.previewImage}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <View style={styles.noPreview}>
-                            <Text style={styles.noPreviewText}>No preview available</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={styles.resultMain}>
-                        <View style={styles.resultHeaderRow}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.resultFileName}>{result.filename}</Text>
-                            <Text style={styles.resultSubText}>
-                              Model input size: {formatValue(analysis.details?.model_input_size)}
-                            </Text>
-                          </View>
-
-                          <View
-                            style={[
-                              styles.verdictBadge,
-                              {
-                                backgroundColor: verdictStyle.backgroundColor,
-                                borderColor: verdictStyle.borderColor,
-                              },
-                            ]}
-                          >
-                            <Text
-                              style={[styles.verdictBadgeText, { color: verdictStyle.color }]}
-                            >
-                              {verdict}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.metricGrid}>
-                          <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>Predicted ISO</Text>
-                            <Text style={styles.metricValue}>
-                              {formatValue(predicted.iso)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>Predicted F-Stop</Text>
-                            <Text style={styles.metricValue}>
-                              {formatValue(predicted.f_stop)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>Predicted Shutter</Text>
-                            <Text style={styles.metricValue}>
-                              {formatValue(predicted.shutter_display)}
-                            </Text>
-                          </View>
-
-                          <View style={styles.metricCard}>
-                            <Text style={styles.metricLabel}>Predicted EV</Text>
-                            <Text style={styles.metricValue}>
-                              {formatValue(predicted.ev)}
-                            </Text>
-                          </View>
-                        </View>
-
-                        <View style={styles.infoSections}>
-                          <View style={styles.infoCard}>
-                            <Text style={styles.infoTitle}>Reference Data</Text>
-
-                            {truth ? (
-                              <View style={styles.infoList}>
-                                <Text style={styles.infoText}>
-                                  <Text style={styles.infoStrong}>ISO: </Text>
-                                  {formatValue(truth.iso)}
-                                </Text>
-                                <Text style={styles.infoText}>
-                                  <Text style={styles.infoStrong}>F-Stop: </Text>
-                                  {formatValue(truth.f_stop)}
-                                </Text>
-                                <Text style={styles.infoText}>
-                                  <Text style={styles.infoStrong}>Shutter: </Text>
-                                  {formatValue(truth.shutter_display)}
-                                </Text>
-                                <Text style={styles.infoText}>
-                                  <Text style={styles.infoStrong}>EV: </Text>
-                                  {formatValue(truth.ev)}
-                                </Text>
-                              </View>
-                            ) : (
-                              <Text style={styles.infoMuted}>
-                                No usable EXIF reference data found.
-                              </Text>
-                            )}
-                          </View>
-
-                          <View style={styles.infoCard}>
-                            <Text style={styles.infoTitle}>Analysis Summary</Text>
-
-                            <View style={styles.infoList}>
-                              <Text style={styles.infoText}>
-                                <Text style={styles.infoStrong}>Delta EV: </Text>
-                                {formatValue(analysis.delta_ev)}
-                              </Text>
-                              <Text style={styles.infoText}>
-                                <Text style={styles.infoStrong}>Device: </Text>
-                                {formatValue(analysis.details?.device_used)}
-                              </Text>
-                              <Text style={styles.infoText}>
-                                <Text style={styles.infoStrong}>Explanation: </Text>
-                                {formatValue(analysis.details?.explanation)}
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                );
-              })
-            )}
+            <AnalysisResults
+              results={resultsWithPreview}
+              formatValue={formatValue}
+              getVerdictStyle={getVerdictStyle}
+            />
           </View>
         </View>
       </ScrollView>
@@ -770,141 +676,6 @@ const styles = StyleSheet.create({
   messageText: {
     fontSize: 14,
     color: "#475569",
-  },
-  emptyState: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    borderWidth: 1,
-    borderStyle: "dashed",
-    borderColor: "#cbd5e1",
-    padding: 28,
-    alignItems: "center",
-  },
-  emptyStateTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#1e293b",
-  },
-  emptyStateText: {
-    marginTop: 8,
-    fontSize: 14,
-    color: "#64748b",
-    textAlign: "center",
-  },
-  resultCard: {
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 16,
-    shadowColor: "#000",
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-  },
-  resultTop: {
-    gap: 16,
-  },
-  previewWrapper: {
-    borderRadius: 16,
-    overflow: "hidden",
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    backgroundColor: "#f8fafc",
-  },
-  previewImage: {
-    width: "100%",
-    height: 220,
-  },
-  noPreview: {
-    height: 220,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  noPreviewText: {
-    color: "#94a3b8",
-    fontSize: 14,
-  },
-  resultMain: {
-    gap: 14,
-  },
-  resultHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-  },
-  resultFileName: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#1e293b",
-  },
-  resultSubText: {
-    marginTop: 4,
-    fontSize: 13,
-    color: "#64748b",
-  },
-  verdictBadge: {
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  verdictBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  metricGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 10,
-  },
-  metricCard: {
-    width: "47%",
-    backgroundColor: "#f8fafc",
-    borderRadius: 14,
-    padding: 14,
-  },
-  metricLabel: {
-    fontSize: 11,
-    textTransform: "uppercase",
-    color: "#64748b",
-    fontWeight: "600",
-  },
-  metricValue: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#1e293b",
-  },
-  infoSections: {
-    gap: 12,
-  },
-  infoCard: {
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 14,
-    padding: 14,
-  },
-  infoTitle: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1e293b",
-    marginBottom: 10,
-  },
-  infoList: {
-    gap: 6,
-  },
-  infoText: {
-    fontSize: 14,
-    color: "#475569",
-    lineHeight: 20,
-  },
-  infoStrong: {
-    fontWeight: "700",
-    color: "#1e293b",
-  },
-  infoMuted: {
-    fontSize: 14,
-    color: "#64748b",
   },
 });
 

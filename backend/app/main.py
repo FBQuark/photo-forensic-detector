@@ -1,26 +1,45 @@
-import os
-import shutil
-import tempfile
-import json
-import csv
-import io
-import tempfile
-import zipfile
-
-
+import os, shutil, tempfile, json, csv, io, tempfile, zipfile
 from Forensic_algorithm import analyze_image
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
-from fastapi import Form
+from auth import get_current_user_from_auth_header
 from fpdf import FPDF
 from PIL import Image as PILImage
 
+from config import (
+    APPWRITE_DATABASE_ID,
+    APPWRITE_COLLECTION_ID,
+    APPWRITE_BUCKET_ID,
+)
+
+from converters import (
+    flatten_result_for_csv,
+    analysis_to_db_row,
+    db_row_to_analysis_result,
+    create_preview_image
+)
+
+#appwrite imports
+from appwrite.services.databases import Databases
+from appwrite.services.storage import Storage
+from appwrite.id import ID
+from appwrite.permission import Permission
+from appwrite.role import Role
+from appwrite.input_file import InputFile
+from appwrite.services.tables_db import TablesDB
+from appwrite.query import Query
+
+
+#fastapi imports
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi import Form, Header
 
 
 
+#starting the server instance
 app = FastAPI()
 
+#Allowing what domains can access the paths being defined 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -33,86 +52,173 @@ app.add_middleware(
 )
 
 
-def flatten_result_for_csv(data: dict) -> dict:
-    analysis = data.get("analysis", {})
-    predicted = analysis.get("predicted", {})
-    truth = analysis.get("truth")
-    details = analysis.get("details", {})
-
-    return {
-        "filename": data.get("filename"),
-
-        "predicted_iso": predicted.get("iso"),
-        "predicted_f_stop": predicted.get("f_stop"),
-        "predicted_shutter_seconds": predicted.get("shutter_seconds"),
-        "predicted_shutter_display": predicted.get("shutter_display"),
-        "predicted_ev": predicted.get("ev"),
-
-        "truth_iso": truth.get("iso") if truth else None,
-        "truth_f_stop": truth.get("f_stop") if truth else None,
-        "truth_shutter_seconds": truth.get("shutter_seconds") if truth else None,
-        "truth_shutter_display": truth.get("shutter_display") if truth else None,
-        "truth_ev": truth.get("ev") if truth else None,
-
-        "delta_ev": analysis.get("delta_ev"),
-        "verdict": analysis.get("verdict"),
-
-        "device_used": details.get("device_used"),
-        "model_input_size": details.get("model_input_size"),
-        "explanation": details.get("explanation", ""),
-    }
-
-
-
-@app.get("/health") #health route to check for the api health and connectivity 
+@app.get("/health") # health route to check for the api health and connectivity 
 async def health_check():
     return {"status": "ok"}
 
 
 @app.post("/upload-image")
-async def upload_image(file: UploadFile = File(...)): #get the file from the frontent
+async def upload_image(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+):
     temp_path = None
+    uploaded_photo_id = None
+
     try:
+        user, client = get_current_user_from_auth_header(authorization) #verifies the user using their JWT
+        storage = Storage(client)
+        databases = Databases(client)
+
         original_name = file.filename or "uploaded_file"
-        _, ext = os.path.splitext(original_name) #getting only the extension from the filename (.png etc)
+        _, ext = os.path.splitext(original_name)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp: #chatGPT generated. since the algorithm expects a file path this function will essentially create a temp file in 
-            #memory, we then save this temp path to use for the path passing later 
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
             temp_path = tmp.name
-            shutil.copyfileobj(file.file, tmp) #copying the data from the photo passed in to the temp file 
+            shutil.copyfileobj(file.file, tmp)
 
-        file_size = os.path.getsize(temp_path) #getting the size of the file 
+        file_size = os.path.getsize(temp_path)
 
-
-        #for debugging purposes print basic file information
         print("=== MESSAGE RECEIVED ===")
         print(f"filename: {file.filename}")
         print(f"content_type: {file.content_type}")
         print(f"temp_path: {temp_path}")
         print(f"size_bytes: {file_size}")
 
-
-        result = analyze_image(temp_path) #call to algorithm to analyze image
+        result = analyze_image(temp_path)
 
         print("=== ALGORITHM RESULT ===")
         print(json.dumps(result, indent=2))
 
+        uploaded_file = storage.create_file( #creating the file to store the image the user uploaded 
+            bucket_id=APPWRITE_BUCKET_ID,
+            file_id=ID.unique(),
+            file=InputFile.from_path(temp_path),
+            permissions=[
+                Permission.read(Role.user(user.id)),
+                Permission.delete(Role.user(user.id)),
+            ],
+        )
 
-        return { #return the results of the algorithm as well as the filename for display purposes (could maybe be done on the backend we will see)
-            "filename": file.filename,
+        uploaded_photo_id = uploaded_file.id
+
+        row_data = analysis_to_db_row( #flatten data in order to be inserted into database
+            filename=original_name,
+            analysis=result,
+            user_id=user.id,
+            photo_id=uploaded_photo_id,
+        )
+
+        databases.create_document( # save the data from the algorithm to the appwrite database
+            database_id=APPWRITE_DATABASE_ID,
+            collection_id=APPWRITE_COLLECTION_ID,
+            document_id=ID.unique(),
+            data=row_data,
+            permissions=[
+                Permission.read(Role.user(user.id)),
+                Permission.update(Role.user(user.id)),
+                Permission.delete(Role.user(user.id)),
+            ],
+        )
+
+        return { # Return the analysis and the filename to the frontend to be displayed
+            "filename": original_name,
             "analysis": result
         }
+
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
 
+# Fetch the authenticated users most recent analysis history
+@app.get("/fetch-history")
+async def fetch_history(
+    authorization: str | None = Header(default=None),
+):
+    try:
+        user, client = get_current_user_from_auth_header(authorization) # Verify User
+        tables = TablesDB(client)
+
+        response = tables.list_rows( # only fetch rows owned by this user, order by the date, and get the most recent 15 entries
+            database_id=APPWRITE_DATABASE_ID,
+            table_id=APPWRITE_COLLECTION_ID,
+            queries=[
+                Query.equal("userId", [user.id]),
+                Query.order_desc("$createdAt"),
+                Query.limit(15),
+            ],
+        )
+
+        rows = response.rows if hasattr(response, "rows") else response["rows"] # Depending on the SDK the rows may be represented as different objects, this line allows us to handle more
+        #variation in how the data is returned from the appwrite backend
+
+        return [db_row_to_analysis_result(row) for row in rows] #return to the frontend
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
-      
+# returns an image preview based on the photo_id
+@app.get("/photo-preview/{photo_id}")
+async def photo_preview(
+    photo_id: str,
+    authorization: str | None = Header(default=None),
+):
+    try:
+        user, client = get_current_user_from_auth_header(authorization) #verify user
+
+        # Confirm this photo belongs to the current user
+        tables = TablesDB(client)
+        
+        # Check if the row belongs to the current user
+        response = tables.list_rows(
+            database_id=APPWRITE_DATABASE_ID,
+            table_id=APPWRITE_COLLECTION_ID,
+            queries=[
+                Query.equal("userId", [user.id]),
+                Query.equal("photoId", [photo_id]),
+                Query.limit(1),
+            ],
+        )
+
+        rows = response.rows if hasattr(response, "rows") else response["rows"] #covering multiple return types from the backend
+
+        if not rows:
+            raise HTTPException(status_code=403, detail="You do not have access to this photo")
+
+        # Fetch the photo from Appwrite Storage after security check
+        storage = Storage(client)
+
+        file_bytes = storage.get_file_view(
+            bucket_id=APPWRITE_BUCKET_ID,
+            file_id=photo_id,
+        )
+
+        preview_bytes = create_preview_image(
+            image_bytes=file_bytes,
+            max_size=700,
+            quality=75,
+        )
+
+
+        # Return image bytes to frontend for display
+        return StreamingResponse(
+            io.BytesIO(preview_bytes),
+            media_type="image/jpeg",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
       
 @app.post("/download-csv")
 async def download_csv(results: list[dict] = Body(...)): #get the already computed frontend results and convert them into a downloadable csv
@@ -175,7 +281,7 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
         with zipfile.ZipFile(zip_path, "r") as zip_ref:
             zip_ref.extractall(extract_dir)
 
-        supported_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp"}
+        supported_extensions = {".jpg", ".jpeg", ".png"} #define supported image extentions
         all_results = []
 
         # check top-level contents
@@ -186,7 +292,7 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
         if len(top_level_items) == 1:
             possible_folder = os.path.join(extract_dir, top_level_items[0])
             if os.path.isdir(possible_folder):
-                print(f"FOUND WRAPPER FOLDER: {top_level_items[0]}")
+                print(f"FOUND TOP LEVEL FOLDER: {top_level_items[0]}")
                 working_dir = possible_folder
 
         # process only one level deep, ignore any subfolders
@@ -209,7 +315,7 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
             print(f"path: {full_path}")
             print(f"size_bytes: {file_size}")
 
-            result = analyze_image(full_path)
+            result = analyze_image(full_path) #analyze each photo found within the ZIP folder
 
             print("=== ALGORITHM RESULT ===")
             print(json.dumps(result, indent=2))
@@ -237,7 +343,7 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
 
 @app.post("/download-pdf")
 async def download_pdf(files: list[UploadFile] = File(...), results: str = Form(...)): #get the already computed frontend results and convert them into a downloadable pdf
-    temp_paths = [];
+    temp_paths = []
     try:
         #parses the JSON string back into a dictionary list
         results_data = json.loads(results)
