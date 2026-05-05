@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import { getBackendJWT } from "@/lib/appwrite";
@@ -15,6 +15,8 @@ type HistoryItem = AnalysisResult & {
 };
 
 export default function HistoryPage() {
+  const hasFetchedHistory = useRef(false);
+
   //History results being returned by the backend
   const [results, setResults] = useState<HistoryItem[]>([]);
 
@@ -218,6 +220,9 @@ export default function HistoryPage() {
         setMessage("Failed to load history");
       }
     };
+
+    if (hasFetchedHistory.current) return;
+    hasFetchedHistory.current = true;
 
     fetchHistory();
   }, []);

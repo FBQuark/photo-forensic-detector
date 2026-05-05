@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Buffer } from "buffer";
 import {
   ScrollView,
@@ -27,6 +27,7 @@ global.Buffer = global.Buffer || Buffer;
 
 export default function HistoryPage() {
   const API_URL = process.env.EXPO_PUBLIC_API_URL;
+  const hasFetchedHistory = useRef(false);
 
   //History results returned in the backend
   const [results, setResults] = useState<HistoryItem[]>([]);
@@ -345,6 +346,9 @@ export default function HistoryPage() {
         setIsLoading(false);
       }
     };
+
+    if (hasFetchedHistory.current) return;
+    hasFetchedHistory.current = true;
 
     fetchHistory();
   }, [API_URL]);
