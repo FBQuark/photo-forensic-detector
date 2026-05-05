@@ -4,12 +4,11 @@ import { useAuth } from "@/context/AuthContext";
 import { useState, useCallback } from "react";
 import { useDropzone } from "react-dropzone";
 import { getBackendJWT } from "@/lib/appwrite";
-import { useRouter } from "next/navigation"; 
+import { useRouter } from "next/navigation";
 import axios from "axios";
 import AnalysisResults, {
-  type AnalysisResult
+  type AnalysisResult,
 } from "@/app/components/analysisResults";
-
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (axios.isAxiosError(error)) {
@@ -34,6 +33,7 @@ const getErrorMessage = (error: unknown, fallback: string) => {
 };
 
 export default function HomePage() {
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
   const { user, signout } = useAuth();
 
   const [message, setMessage] = useState("");
@@ -44,7 +44,7 @@ export default function HomePage() {
   const [isDownloadingCsv, setIsDownloadingCsv] = useState(false);
   const [results, setResults] = useState<AnalysisResult[]>([]);
 
-  const router = useRouter(); 
+  const router = useRouter();
   const handleSignout = async () => {
     try {
       await signout();
@@ -78,44 +78,49 @@ export default function HomePage() {
     setMessage("");
   };
 
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    clearPreviewUrls();
+  const onDrop = useCallback(
+    (acceptedFiles: File[]) => {
+      clearPreviewUrls();
 
-    if (!acceptedFiles || acceptedFiles.length === 0) {
-      setSelectedFiles([]);
-      setPreviewUrls([]);
-      setResults([]);
-      setMessage("No files selected");
-      return;
-    }
-
-    const zipFiles = acceptedFiles.filter(isZipFile);
-    const imageFiles = acceptedFiles.filter(isImageFile);
-
-    if (zipFiles.length > 0) {
-      if (acceptedFiles.length > 1) {
+      if (!acceptedFiles || acceptedFiles.length === 0) {
         setSelectedFiles([]);
         setPreviewUrls([]);
         setResults([]);
-        setMessage("Please upload either one zip file or image files, not both.");
+        setMessage("No files selected");
         return;
       }
 
-      setSelectedFiles([zipFiles[0]]);
-      setPreviewUrls([]);
+      const zipFiles = acceptedFiles.filter(isZipFile);
+      const imageFiles = acceptedFiles.filter(isImageFile);
+
+      if (zipFiles.length > 0) {
+        if (acceptedFiles.length > 1) {
+          setSelectedFiles([]);
+          setPreviewUrls([]);
+          setResults([]);
+          setMessage(
+            "Please upload either one zip file or image files, not both.",
+          );
+          return;
+        }
+
+        setSelectedFiles([zipFiles[0]]);
+        setPreviewUrls([]);
+        setResults([]);
+        setMessage(`1 zip file selected: ${zipFiles[0].name}`);
+        return;
+      }
+
+      const limitedFiles = imageFiles.slice(0, 10);
+      const urls = limitedFiles.map((file) => URL.createObjectURL(file));
+
+      setSelectedFiles(limitedFiles);
+      setPreviewUrls(urls);
       setResults([]);
-      setMessage(`1 zip file selected: ${zipFiles[0].name}`);
-      return;
-    }
-
-    const limitedFiles = imageFiles.slice(0, 10);
-    const urls = limitedFiles.map((file) => URL.createObjectURL(file));
-
-    setSelectedFiles(limitedFiles);
-    setPreviewUrls(urls);
-    setResults([]);
-    setMessage(`${limitedFiles.length} image file(s) selected`);
-  }, [previewUrls]);
+      setMessage(`${limitedFiles.length} image file(s) selected`);
+    },
+    [previewUrls],
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -154,9 +159,9 @@ export default function HomePage() {
         formData.append("file", firstFile);
 
         const res = await axios.post<AnalysisResult[]>(
-          "http://127.0.0.1:8000/upload-zip",
+          `${API_BASE_URL}/upload-zip`,
           formData,
-          authConfig
+          authConfig,
         );
 
         setResults(res.data);
@@ -171,9 +176,9 @@ export default function HomePage() {
         formData.append("file", file);
 
         const res = await axios.post<AnalysisResult>(
-          "http://127.0.0.1:8000/upload-image",
+          `${API_BASE_URL}/upload-image`,
           formData,
-          authConfig
+          authConfig,
         );
 
         collectedResults.push(res.data);
@@ -197,13 +202,9 @@ export default function HomePage() {
     setIsDownloadingCsv(true);
 
     try {
-      const res = await axios.post(
-        "http://127.0.0.1:8000/download-csv",
-        results,
-        {
-          responseType: "blob",
-        }
-      );
+      const res = await axios.post(`${API_BASE_URL}/download-csv`, results, {
+        responseType: "blob",
+      });
 
       const blob = new Blob([res.data], { type: "text/csv" });
       const url = window.URL.createObjectURL(blob);
@@ -242,13 +243,9 @@ export default function HomePage() {
 
       formData.append("results", JSON.stringify(results));
 
-      const res = await axios.post(
-        "http://127.0.0.1:8000/download-pdf",
-        formData,
-        {
-          responseType: "blob",
-        }
-      );
+      const res = await axios.post(`${API_BASE_URL}/download-pdf`, formData, {
+        responseType: "blob",
+      });
 
       const blob = new Blob([res.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
@@ -286,7 +283,8 @@ export default function HomePage() {
                 Upload files
               </h2>
               <p className="mt-2 text-sm text-slate-500">
-                Analyze image files or a single zip file for suspicious metadata.
+                Analyze image files or a single zip file for suspicious
+                metadata.
               </p>
             </div>
 
@@ -342,7 +340,10 @@ export default function HomePage() {
 
                 <div className="space-y-3">
                   {selectedFiles.map((file, index) => (
-                    <div key={index} className="rounded-lg bg-white p-3 shadow-sm">
+                    <div
+                      key={index}
+                      className="rounded-lg bg-white p-3 shadow-sm"
+                    >
                       <p className="text-sm font-medium text-slate-800">
                         {file.name}
                       </p>

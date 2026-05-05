@@ -16,6 +16,7 @@ type HistoryItem = AnalysisResult & {
 
 export default function HistoryPage() {
   const hasFetchedHistory = useRef(false);
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   //History results being returned by the backend
   const [results, setResults] = useState<HistoryItem[]>([]);
@@ -69,7 +70,7 @@ export default function HistoryPage() {
 
     try {
       const res = await axios.post(
-        "http://127.0.0.1:8000/download-csv",
+        `${API_BASE_URL}/download-csv`,
         selectedResults,
         { responseType: "blob" },
       );
@@ -133,11 +134,9 @@ export default function HistoryPage() {
 
       formData.append("results", JSON.stringify(resultsToDownload));
 
-      const res = await axios.post(
-        "http://127.0.0.1:8000/download-pdf",
-        formData,
-        { responseType: "blob" },
-      );
+      const res = await axios.post(`${API_BASE_URL}/download-pdf`, formData, {
+        responseType: "blob",
+      });
 
       const blob = new Blob([res.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
@@ -170,7 +169,7 @@ export default function HistoryPage() {
         const jwt = await getBackendJWT();
 
         const historyRes = await axios.get<HistoryItem[]>(
-          "http://127.0.0.1:8000/fetch-history",
+          `${API_BASE_URL}/fetch-history`,
           {
             headers: {
               Authorization: `Bearer ${jwt}`,
@@ -193,7 +192,7 @@ export default function HistoryPage() {
             //getting the image previews
             try {
               const imageRes = await axios.get(
-                `http://127.0.0.1:8000/photo-preview/${item.photoId}`,
+                `${API_BASE_URL}/photo-preview/${item.photoId}`,
                 {
                   headers: {
                     Authorization: `Bearer ${jwt}`,
