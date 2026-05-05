@@ -6,6 +6,7 @@ import os
 import math
 import subprocess
 import json
+import gc
 import shutil
 from fractions import Fraction
 from torchvision.models import resnet18
@@ -129,7 +130,7 @@ def analyze_image(image_path: str):
     x13 = build_13ch_sync(img_rgb)
     tensor = torch.from_numpy(x13).unsqueeze(0).to(DEVICE)
 
-    with torch.no_grad():
+    with torch.inference_mode():
         p_iso_log, p_f_log, p_ev = model(tensor)
 
         p_iso = 2 ** p_iso_log.item()
@@ -184,4 +185,6 @@ def analyze_image(image_path: str):
         result["verdict"] = "NO_EXIF"
         result["details"]["explanation"] = "No usable EXIF data found."
 
+    del img, img_rgb, x13, tensor
+    gc.collect()
     return result
