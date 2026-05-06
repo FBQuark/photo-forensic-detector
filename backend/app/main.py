@@ -8,6 +8,7 @@ from config import (
     APPWRITE_DATABASE_ID,
     APPWRITE_COLLECTION_ID,
     APPWRITE_BUCKET_ID,
+    ALLOWED_ORIGINS
 )
 
 from converters import (
@@ -39,13 +40,25 @@ from fastapi import Form, Header
 #starting the server instance
 app = FastAPI()
 
+
+def get_allowed_origins():
+    origins = ALLOWED_ORIGINS
+
+    if not origins:
+        raise RuntimeError("Missing ALLOWED_ORIGINS environment variable")
+
+    return [
+        origin.strip()
+        for origin in origins.split(",")
+        if origin.strip()
+    ]
+
+
+
 #Allowing what domains can access the paths being defined 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-    ],
+    allow_origins=get_allowed_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
