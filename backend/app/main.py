@@ -51,6 +51,52 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def process_and_save_image(image_path: str, filename: str, user, client):
+    storage = Storage(client)
+    databases = Databases(client)
+
+    result = analyze_image(image_path)
+
+    print("=== ALGORITHM RESULT ===")
+    print(json.dumps(result, indent=2))
+
+    uploaded_file = storage.create_file( #creating the file to store the image the user uploaded 
+        bucket_id=APPWRITE_BUCKET_ID,
+        file_id=ID.unique(),
+        file=InputFile.from_path(image_path),
+        permissions=[
+            Permission.read(Role.user(user.id)),
+            Permission.delete(Role.user(user.id)),
+        ],
+    )
+
+    uploaded_photo_id = uploaded_file.id
+
+    row_data = analysis_to_db_row( #flatten data in order to be inserted into database
+        filename=filename,
+        analysis=result,
+        user_id=user.id,
+        photo_id=uploaded_photo_id,
+    )
+
+    databases.create_document( # save the data from the algorithm to the appwrite database
+        database_id=APPWRITE_DATABASE_ID,
+        collection_id=APPWRITE_COLLECTION_ID,
+        document_id=ID.unique(),
+        data=row_data,
+        permissions=[
+            Permission.read(Role.user(user.id)),
+            Permission.update(Role.user(user.id)),
+            Permission.delete(Role.user(user.id)),
+        ],
+    )
+
+    return { # Return the analysis, filename, and photoId to the frontend to be displayed
+        "filename": filename,
+        "analysis": result,
+        "photoId": uploaded_photo_id,
+    }
+
 
 @app.get("/health") # health route to check for the api health and connectivity 
 async def health_check():
@@ -63,12 +109,9 @@ async def upload_image(
     authorization: str | None = Header(default=None),
 ):
     temp_path = None
-    uploaded_photo_id = None
 
     try:
         user, client = get_current_user_from_auth_header(authorization) #verifies the user using their JWT
-        storage = Storage(client)
-        databases = Databases(client)
 
         original_name = file.filename or "uploaded_file"
         _, ext = os.path.splitext(original_name)
@@ -85,46 +128,12 @@ async def upload_image(
         print(f"temp_path: {temp_path}")
         print(f"size_bytes: {file_size}")
 
-        result = analyze_image(temp_path)
-
-        print("=== ALGORITHM RESULT ===")
-        print(json.dumps(result, indent=2))
-
-        uploaded_file = storage.create_file( #creating the file to store the image the user uploaded 
-            bucket_id=APPWRITE_BUCKET_ID,
-            file_id=ID.unique(),
-            file=InputFile.from_path(temp_path),
-            permissions=[
-                Permission.read(Role.user(user.id)),
-                Permission.delete(Role.user(user.id)),
-            ],
-        )
-
-        uploaded_photo_id = uploaded_file.id
-
-        row_data = analysis_to_db_row( #flatten data in order to be inserted into database
+        return process_and_save_image(
+            image_path=temp_path,
             filename=original_name,
-            analysis=result,
-            user_id=user.id,
-            photo_id=uploaded_photo_id,
+            user=user,
+            client=client,
         )
-
-        databases.create_document( # save the data from the algorithm to the appwrite database
-            database_id=APPWRITE_DATABASE_ID,
-            collection_id=APPWRITE_COLLECTION_ID,
-            document_id=ID.unique(),
-            data=row_data,
-            permissions=[
-                Permission.read(Role.user(user.id)),
-                Permission.update(Role.user(user.id)),
-                Permission.delete(Role.user(user.id)),
-            ],
-        )
-
-        return { # Return the analysis and the filename to the frontend to be displayed
-            "filename": original_name,
-            "analysis": result
-        }
 
     except HTTPException:
         raise
@@ -252,11 +261,16 @@ async def download_csv(results: list[dict] = Body(...)): #get the already comput
     
 
 @app.post("/upload-zip")
-async def upload_zip(file: UploadFile = File(...)): #get the zip file from the frontend, extract it, and process top-level images only
+async def upload_zip(
+    file: UploadFile = File(...),
+    authorization: str | None = Header(default=None),
+): #get the zip file from the frontend, extract it, and process top-level images only
     zip_path = None
     extract_dir = None
 
     try:
+        user, client = get_current_user_from_auth_header(authorization) #verifies the user using their JWT
+
         original_name = file.filename or "uploaded_zip"
         _, ext = os.path.splitext(original_name)
 
@@ -295,6 +309,9 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
                 print(f"FOUND TOP LEVEL FOLDER: {top_level_items[0]}")
                 working_dir = possible_folder
 
+        image_count = 0
+        max_zip_images = 10
+
         # process only one level deep, ignore any subfolders
         for name in os.listdir(working_dir):
             full_path = os.path.join(working_dir, name)
@@ -308,6 +325,10 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
                 print(f"IGNORING NON-IMAGE FILE: {name}")
                 continue
 
+            if image_count >= max_zip_images:
+                print(f"ZIP IMAGE LIMIT REACHED: {max_zip_images}")
+                break
+
             file_size = os.path.getsize(full_path)
 
             print("=== EXTRACTED IMAGE FOUND ===")
@@ -315,15 +336,21 @@ async def upload_zip(file: UploadFile = File(...)): #get the zip file from the f
             print(f"path: {full_path}")
             print(f"size_bytes: {file_size}")
 
-            result = analyze_image(full_path) #analyze each photo found within the ZIP folder
+            saved_result = process_and_save_image(
+                image_path=full_path,
+                filename=name,
+                user=user,
+                client=client,
+            )
 
-            print("=== ALGORITHM RESULT ===")
-            print(json.dumps(result, indent=2))
+            all_results.append(saved_result)
+            image_count += 1
 
-            all_results.append({
-                "filename": name,
-                "analysis": result
-            })
+        if not all_results:
+            raise HTTPException(
+                status_code=400,
+                detail="No supported top-level images were found in the zip file.",
+            )
 
         return all_results  # return same shape as multi-image frontend expects
 

@@ -10,6 +10,10 @@ import AnalysisResults, {
   type AnalysisResult,
 } from "@/app/components/analysisResults";
 
+type AnalysisResultWithPhotoId = AnalysisResult & {
+  photoId?: string;
+};
+
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (axios.isAxiosError(error)) {
     const detail = error.response?.data?.detail;
@@ -39,10 +43,11 @@ export default function HomePage() {
   const [message, setMessage] = useState("");
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [previewBlobs, setPreviewBlobs] = useState<(Blob | null)[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDownloadingPDF, setIsDownloadingPDF] = useState(false);
   const [isDownloadingCsv, setIsDownloadingCsv] = useState(false);
-  const [results, setResults] = useState<AnalysisResult[]>([]);
+  const [results, setResults] = useState<AnalysisResultWithPhotoId[]>([]);
 
   const router = useRouter();
   const handleSignout = async () => {
@@ -74,6 +79,7 @@ export default function HomePage() {
     clearPreviewUrls();
     setSelectedFiles([]);
     setPreviewUrls([]);
+    setPreviewBlobs([]);
     setResults([]);
     setMessage("");
   };
@@ -81,6 +87,7 @@ export default function HomePage() {
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
       clearPreviewUrls();
+      setPreviewBlobs([]);
 
       if (!acceptedFiles || acceptedFiles.length === 0) {
         setSelectedFiles([]);
@@ -106,6 +113,7 @@ export default function HomePage() {
 
         setSelectedFiles([zipFiles[0]]);
         setPreviewUrls([]);
+        setPreviewBlobs([]);
         setResults([]);
         setMessage(`1 zip file selected: ${zipFiles[0].name}`);
         return;
@@ -133,6 +141,51 @@ export default function HomePage() {
     },
   });
 
+  const fetchBackendPreviews = async (
+    items: AnalysisResultWithPhotoId[],
+    jwt: string,
+  ) => {
+    if (!API_BASE_URL) {
+      setMessage("Backend URL is not configured");
+      return;
+    }
+
+    clearPreviewUrls();
+
+    const blobs: (Blob | null)[] = [];
+
+    const urls = await Promise.all(
+      items.map(async (item, index) => {
+        if (!item.photoId) {
+          blobs[index] = null;
+          return "";
+        }
+
+        try {
+          const imageRes = await axios.get(
+            `${API_BASE_URL}/photo-preview/${item.photoId}`,
+            {
+              headers: {
+                Authorization: `Bearer ${jwt}`,
+              },
+              responseType: "blob",
+            },
+          );
+
+          blobs[index] = imageRes.data;
+          return URL.createObjectURL(imageRes.data);
+        } catch (error) {
+          console.error("Failed to load preview:", item.photoId, error);
+          blobs[index] = null;
+          return "";
+        }
+      }),
+    );
+
+    setPreviewBlobs(blobs);
+    setPreviewUrls(urls);
+  };
+
   const handleSubmit = async () => {
     if (selectedFiles.length === 0) {
       setMessage("Please select at least one file first");
@@ -149,8 +202,10 @@ export default function HomePage() {
 
     setIsSubmitting(true);
     setMessage("Processing...");
+    clearPreviewUrls();
+    setPreviewUrls([]);
+    setPreviewBlobs([]);
     setResults([]);
-
     try {
       const firstFile = selectedFiles[0];
 
@@ -158,24 +213,25 @@ export default function HomePage() {
         const formData = new FormData();
         formData.append("file", firstFile);
 
-        const res = await axios.post<AnalysisResult[]>(
+        const res = await axios.post<AnalysisResultWithPhotoId[]>(
           `${API_BASE_URL}/upload-zip`,
           formData,
           authConfig,
         );
 
         setResults(res.data);
+        await fetchBackendPreviews(res.data, jwt);
         setMessage("Finished processing zip file");
         return;
       }
 
-      const collectedResults: AnalysisResult[] = [];
+      const collectedResults: AnalysisResultWithPhotoId[] = [];
 
       for (const file of selectedFiles) {
         const formData = new FormData();
         formData.append("file", file);
 
-        const res = await axios.post<AnalysisResult>(
+        const res = await axios.post<AnalysisResultWithPhotoId>(
           `${API_BASE_URL}/upload-image`,
           formData,
           authConfig,
@@ -185,6 +241,7 @@ export default function HomePage() {
       }
 
       setResults(collectedResults);
+      await fetchBackendPreviews(collectedResults, jwt);
       setMessage(`Finished processing ${collectedResults.length} file(s)`);
     } catch (error: unknown) {
       setMessage(getErrorMessage(error, "Upload failed"));
@@ -237,8 +294,28 @@ export default function HomePage() {
     try {
       const formData = new FormData();
 
-      for (const file of selectedFiles) {
-        formData.append("files", file);
+      const selectedImageFiles = selectedFiles.filter(isImageFile);
+
+      if (selectedImageFiles.length > 0) {
+        for (const file of selectedImageFiles) {
+          formData.append("files", file);
+        }
+      } else {
+        previewBlobs.forEach((blob, index) => {
+          if (blob) {
+            formData.append(
+              "files",
+              blob,
+              results[index]?.filename || `analysis-image-${index}.jpg`,
+            );
+          }
+        });
+      }
+
+      if (!formData.has("files")) {
+        setMessage("No preview images available for PDF download");
+        setIsDownloadingPDF(false);
+        return;
       }
 
       formData.append("results", JSON.stringify(results));
