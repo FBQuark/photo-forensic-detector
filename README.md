@@ -1,3 +1,7 @@
+
+
+
+
 # photo-forensic-detector## Environment Setup
 
 This project uses separate environment files for the backend, web app, and mobile app.
@@ -75,6 +79,12 @@ http://localhost:3000
 ```
 
 The backend terminal must stay running while using the web app.
+
+Video Demo:
+
+
+https://github.com/user-attachments/assets/76f6399d-0660-4b16-be98-6842554f7557
+
 
 ## Running the Mobile App
 
