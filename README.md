@@ -6,7 +6,9 @@
 
 
 
-# photo-forensic-detector## Environment Setup
+# photo-forensic-detector
+
+## Environment Setup
 
 This project uses separate environment files for the backend, web app, and mobile app.
 
