@@ -2,6 +2,10 @@
 
 
 
+
+
+
+
 # photo-forensic-detector## Environment Setup
 
 This project uses separate environment files for the backend, web app, and mobile app.
@@ -175,3 +179,9 @@ npx expo start --tunnel -c
 Once Expo starts, scan the QR code using Expo Go mobile application (must be downloaded from your app store).
 
 The backend and ngrok terminals must stay running while using the mobile app.
+
+
+mobile demo:
+
+
+https://github.com/user-attachments/assets/4587fbe1-856b-42b9-9249-bdc86a8b705f
