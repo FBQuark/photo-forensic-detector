@@ -23,6 +23,7 @@ global.Buffer = global.Buffer || Buffer;
 
 type AnalysisResult = {
   filename: string;
+  photoId?: string;
   analysis: {
     predicted?: {
       iso?: number;
@@ -93,12 +94,6 @@ export default function Index() {
           backgroundColor: "#fef3c7",
           color: "#92400e",
           borderColor: "#fde68a",
-        };
-      case "FAKE":
-        return {
-          backgroundColor: "#fee2e2",
-          color: "#991b1b",
-          borderColor: "#fecaca",
         };
       case "NO_EXIF":
         return {
@@ -198,13 +193,17 @@ export default function Index() {
           type: photo.mimeType || "image/jpeg",
         } as any);
 
-        const res = await axios.post(`${API_URL}/upload-image`, formData, {
-          headers: {
-            "Content-Type": "multipart/form-data",
-            Authorization: `Bearer ${jwt}`,
+        const res = await axios.post<AnalysisResult>(
+          `${API_URL}/upload-image`,
+          formData,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+              Authorization: `Bearer ${jwt}`,
+            },
+            timeout: 120000,
           },
-          timeout: 120000,
-        });
+        );
 
         collectedResults.push(res.data);
       }
