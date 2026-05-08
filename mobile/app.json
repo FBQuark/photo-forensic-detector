@@ -10,7 +10,7 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier":"com.capstone.photoforensicdetector"
+      "bundleIdentifier": "com.capstone.photoforensicdetector"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +21,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package":"com.capstone.photoforensicdetector"
+      "package": "com.capstone.photoforensicdetector"
     },
     "web": {
       "output": "static",
@@ -45,6 +45,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "141f6eb3-5856-4991-a1dc-3c62f968cb71"
+      }
     }
   }
 }
