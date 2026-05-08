@@ -12,6 +12,8 @@
 
 This project uses separate environment files for the backend, web app, and mobile app.
 
+to run the backend you must download ExifTool and have it on your PATH
+
 The repository includes example files with the required variable names:
 
 ```txt
