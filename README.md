@@ -27,9 +27,9 @@ Before running the project, create the real environment files from the provided 
 From the project root, run:
 
 ```bash
-cp backend/app/.env.example backend/app/.env
-cp web/.env.example web/.env.local
-cp mobile/.env.example mobile/.env.local
+mv backend/app/.env.example backend/app/.env
+mv web/.env.example web/.env.local
+mv mobile/.env.example mobile/.env.local
 ```
 
 Then fill in the missing values with the values provided to you by one of the collaborators (saving the mobile EXPO_PUBLIC_API_URL blank for now)
